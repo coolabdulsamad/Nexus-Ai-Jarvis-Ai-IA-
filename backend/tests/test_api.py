@@ -3,6 +3,12 @@ from fastapi.testclient import TestClient
 from backend.main import create_app
 
 
+def client(tmp_path):
+    app = create_app()
+    app.state_path = tmp_path
+    return TestClient(app)
+
+
 def make_client(monkeypatch, tmp_path):
     monkeypatch.setenv("NEXUS_DB_PATH", str(tmp_path / "nexus-test.db"))
     return TestClient(create_app())
@@ -92,3 +98,51 @@ def test_validation_and_unknown_approval(monkeypatch, tmp_path):
     with make_client(monkeypatch, tmp_path) as api:
         assert api.post("/api/commands", json={"text": ""}).status_code == 422
         assert api.post("/api/approvals/not-real/approve").status_code == 404
+
+
+def test_voice_and_avatar_settings_persist(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        defaults = api.get("/api/settings")
+        assert defaults.status_code == 200
+        assert defaults.json() == {
+            "assistant_name": "Nexus",
+            "voice_enabled": True,
+            "voice_rate": 1.0,
+            "avatar_mode": "globe",
+        }
+
+        updated = api.post(
+            "/api/settings",
+            json={
+                "assistant_name": "  Jarvis  ",
+                "voice_enabled": False,
+                "voice_rate": 1.2,
+                "avatar_mode": "humanoid",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["assistant_name"] == "Jarvis"
+        assert updated.json()["voice_enabled"] is False
+        assert updated.json()["avatar_mode"] == "humanoid"
+        status = api.post("/api/commands", json={"text": "System status"}).json()
+        assert status["message"].startswith("Jarvis local core is online")
+
+    with make_client(monkeypatch, tmp_path) as restarted:
+        settings = restarted.get("/api/settings").json()
+        assert settings["assistant_name"] == "Jarvis"
+        assert settings["voice_rate"] == 1.2
+        assert settings["avatar_mode"] == "humanoid"
+        event_types = {event["event_type"] for event in restarted.get("/api/audit").json()["events"]}
+        assert "settings.updated" in event_types
+
+
+def test_settings_validation_and_partial_update(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        assert api.post("/api/settings", json={"assistant_name": "   "}).status_code == 422
+        assert api.post("/api/settings", json={"voice_rate": 2.0}).status_code == 422
+        assert api.post("/api/settings", json={"avatar_mode": "robot"}).status_code == 422
+
+        response = api.post("/api/settings", json={"avatar_mode": "humanoid"})
+        assert response.status_code == 200
+        assert response.json()["assistant_name"] == "Nexus"
+        assert response.json()["voice_enabled"] is True

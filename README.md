@@ -1,6 +1,6 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant foundation. This first working phase provides a real command path, persistent notes, explicit approval/rejection, audit history and an interactive yellow globe. It does **not** pretend that voice, Chrome, AC, mobile or camera connectors are already active.
+Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes, explicit approval/rejection, audit history, browser voice interaction, and switchable yellow globe and speech-reactive humanoid modes. It does **not** pretend that Chrome, AC, mobile or camera connectors are already active.
 
 ## Quick start on Ubuntu 24.04
 
@@ -26,13 +26,24 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 5. Repeat with another note and choose **Reject** — the note is not created.
 6. Send `Open Chrome and search Google` or `Turn on the AC` — Nexus clearly reports that the connector is not configured and takes no action.
 
+## Voice and humanoid mode
+
+1. Use **Globe / Humanoid** above the visual assistant to switch modes. The choice is saved locally.
+2. Open **Voice & core** to change the assistant name, enable spoken responses, adjust speech rate and preview the voice.
+3. Choose **Speak to Nexus** and allow the browser's microphone prompt. Speak one command; its final transcript enters the same command path as typed text.
+4. Choose **Stop listening** to cancel capture or **Stop speaking** to interrupt a reply. The humanoid mouth animates during speech.
+
+This voice slice uses the browser Web Speech API. Chrome or Edge on localhost is recommended. Speech-recognition support varies, and some browsers use a network speech service; Nexus does not claim fully offline recognition in this phase. No always-on wake word is active, and Nexus does not store microphone audio. Text remains available as a fallback.
+
+The setup script installs frontend packages through npm 12.2.2 to avoid an npm 10.9.9 peer-resolution failure. It does not change your global npm installation.
+
 ## Update after later phases are pushed
 
 ```bash
 cd Nexus-Ai-Jarvis-Ai-IA-
 git pull origin main
 .venv/bin/python -m pip install -r requirements-dev.txt
-npm install
+npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
@@ -55,7 +66,7 @@ git clone https://github.com/coolabdulsamad/Nexus-Ai-Jarvis-Ai-IA-.git
 cd Nexus-Ai-Jarvis-Ai-IA-
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements-dev.txt
-npm install
+npx --yes npm@12.2.2 install
 .\.venv\Scripts\python -m uvicorn backend.main:app --reload --port 8000
 ```
 

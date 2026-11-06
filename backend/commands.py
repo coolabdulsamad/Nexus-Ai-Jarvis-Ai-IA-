@@ -45,10 +45,10 @@ CAPABILITIES = [
     },
     {
         "id": "voice",
-        "label": "Voice conversation",
-        "status": "planned",
+        "label": "Voice & animated avatar",
+        "status": "available",
         "tier": 1,
-        "description": "Wake word, speech-to-text, text-to-speech and interruption.",
+        "description": "Push-to-talk input, spoken replies, interruption and globe/humanoid modes. Browser support varies.",
     },
     {
         "id": "mobile",
@@ -106,8 +106,9 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         status = "completed"
     elif intent == "system.status":
         counts = store.counts()
+        assistant_name = store.get_settings()["assistant_name"]
         message = (
-            f"Nexus local core is online. {counts['notes']} note(s), "
+            f"{assistant_name} local core is online. {counts['notes']} note(s), "
             f"{counts['pending_approvals']} pending approval(s), and "
             f"{counts['audit_events']} audit event(s) are stored."
         )

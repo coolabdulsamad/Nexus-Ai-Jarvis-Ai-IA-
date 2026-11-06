@@ -23,6 +23,13 @@ class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
 
 
+class SettingsUpdate(BaseModel):
+    assistant_name: str | None = Field(default=None, min_length=1, max_length=40)
+    voice_enabled: bool | None = None
+    voice_rate: float | None = Field(default=None, ge=0.7, le=1.4)
+    avatar_mode: Literal["globe", "humanoid"] | None = None
+
+
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -69,6 +76,20 @@ def create_app() -> FastAPI:
     @app.post("/api/commands", status_code=200, tags=["commands"])
     def command(payload: CommandRequest, request: Request) -> dict:
         return handle_command(payload.text, store(request))
+
+    @app.get("/api/settings", tags=["system"])
+    def settings(request: Request) -> dict:
+        return store(request).get_settings()
+
+    @app.post("/api/settings", tags=["system"])
+    def update_settings(payload: SettingsUpdate, request: Request) -> dict:
+        updates = payload.model_dump(exclude_unset=True, exclude_none=True)
+        if "assistant_name" in updates:
+            name = updates["assistant_name"].strip()
+            if not name:
+                raise HTTPException(status_code=422, detail="Assistant name cannot be blank.")
+            updates["assistant_name"] = name
+        return store(request).update_settings(updates)
 
     @app.get("/api/notes", tags=["memory"])
     def notes(request: Request, limit: int = Query(default=100, ge=1, le=100)) -> dict:

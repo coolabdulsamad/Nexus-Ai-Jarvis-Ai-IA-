@@ -21,6 +21,14 @@ class ApprovalResolvedError(Exception):
     pass
 
 
+DEFAULT_SETTINGS: dict[str, Any] = {
+    "assistant_name": "Nexus",
+    "voice_enabled": True,
+    "voice_rate": 1.0,
+    "avatar_mode": "globe",
+}
+
+
 class Store:
     """Small SQLite repository. No arbitrary SQL or shell input is accepted."""
 
@@ -81,6 +89,12 @@ class Store:
                     status TEXT NOT NULL,
                     detail TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_audit_created
@@ -211,6 +225,32 @@ class Store:
             result["note"] = note
             result["message"] = response
             return result
+
+    def get_settings(self) -> dict[str, Any]:
+        with self.connection() as connection:
+            rows = connection.execute("SELECT key, value FROM settings").fetchall()
+        stored = {row["key"]: json.loads(row["value"]) for row in rows}
+        return {**DEFAULT_SETTINGS, **stored}
+
+    def update_settings(self, updates: dict[str, Any]) -> dict[str, Any]:
+        if not updates:
+            return self.get_settings()
+        with self.connection() as connection:
+            for key, value in updates.items():
+                connection.execute(
+                    """
+                    INSERT INTO settings(key, value, updated_at) VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                    """,
+                    (key, json.dumps(value), utc_now()),
+                )
+            self.audit(
+                connection,
+                "settings.updated",
+                "completed",
+                "Updated assistant settings: " + ", ".join(sorted(updates)),
+            )
+        return self.get_settings()
 
     def list_notes(self, limit: int = 100) -> list[dict[str, Any]]:
         with self.connection() as connection:

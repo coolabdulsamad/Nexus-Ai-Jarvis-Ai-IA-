@@ -5,6 +5,17 @@ export type CommandStatus =
   | 'unavailable'
   | 'unsupported'
 
+export type AvatarMode = 'globe' | 'humanoid'
+
+export interface AssistantSettings {
+  assistant_name: string
+  voice_enabled: boolean
+  voice_rate: number
+  avatar_mode: AvatarMode
+}
+
+export type AssistantSettingsUpdate = Partial<AssistantSettings>
+
 export interface Health {
   status: 'online'
   service: string

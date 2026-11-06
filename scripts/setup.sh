@@ -15,7 +15,9 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements-dev.txt
 
 echo "[3/4] Installing frontend dependencies"
-npm install
+# npm 10.9.9 can fail while resolving current Vitest peer dependencies.
+# Run the install through a known-good npm without changing the global install.
+npx --yes npm@12.2.2 install
 
 echo "[4/4] Preparing local storage"
 mkdir -p data

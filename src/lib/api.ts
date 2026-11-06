@@ -1,6 +1,8 @@
 import type {
   Approval,
   ApprovalResult,
+  AssistantSettings,
+  AssistantSettingsUpdate,
   AuditEvent,
   Capability,
   CommandResult,
@@ -29,6 +31,9 @@ export const nexusApi = {
   approvals: async (status?: string) =>
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
+  settings: () => request<AssistantSettings>('/api/settings'),
+  updateSettings: (settings: AssistantSettingsUpdate) =>
+    request<AssistantSettings>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   command: (text: string) =>
     request<CommandResult>('/api/commands', { method: 'POST', body: JSON.stringify({ text }) }),
   approve: (id: string) => request<ApprovalResult>(`/api/approvals/${id}/approve`, { method: 'POST' }),
