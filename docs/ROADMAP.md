@@ -22,20 +22,32 @@ This is the browser voice slice, not a claim of fully offline speech. Wake-word 
 - Rebuilt the globe as a dense procedural particle world with terrain-like fields, graticules, lifted network arcs, moving packets, satellites, orbital rings and atmospheric dust.
 - Rebuilt the humanoid with deterministic facial, jaw, neck and torso particles; structured eyes, nose and mouth; speech/viseme-driven jaw movement; and an animated chest core.
 - Added drag rotation, scroll/pinch zoom, dedicated zoom-in/zoom-out controls and camera reset to both models, with responsive and reduced-motion behaviour.
-- Added approval-gated HTTP/HTTPS browser navigation and Google search through Chrome/Chromium or the default browser.
+- Added approval-gated HTTP/HTTPS browser navigation and Google search.
 - Added one fixed, read-only `git status --short --branch` terminal action with approval, fixed arguments, no shell, a timeout and captured output.
 - Added action-specific approval cards, honest connector outcomes and expanded backend safety tests.
 
 Exact-target clicking, form submission, arbitrary shell commands, coding automation, Git push and deployment are not part of this slice.
 
-## Phase 04 — memory and adaptive skills
+## Phase 04 — persistent memory foundation and browser handoff (delivered)
 
-Expand typed memory for preferences, applications, files, conversations and device events. Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → review → signed/versioned release → monitoring and rollback. Browser exact-target clicking and broader terminal/coding skills require separate scoped designs and tests.
+- Added typed `preference`, `application`, `file`, `device` and `fact` memory records in local SQLite storage.
+- Added the approval-gated `memory.create` action; rejection creates no record and every decision updates the original command outcome.
+- Added read APIs for typed memories and the recent command/response timeline, with bounded result limits and optional memory-kind filtering.
+- Added console tabs for Notes, Typed memory and Timeline, including empty states, status presentation and responsive layouts.
+- Fixed console browser navigation/search so approval opens the exact URL on the device displaying Nexus rather than relying on a browser process on the API host.
+- Added popup-block handling that leaves the approval pending and reports that no page opened.
+- Verified memory persistence across an API restart and expanded backend integration coverage.
+
+This phase creates and lists memory records. Memory editing/deletion, semantic retrieval, retention controls, adaptive skill installation, exact-target browser clicking and broader terminal/coding skills remain separately scoped work.
 
 ## Phase 05 — owned devices and home
 
-Add Android and iPhone companion/platform connectors with platform-specific capability declarations. Add Matter, Home Assistant or vendor-authorised home integrations, including AC where supported.
+Add Android and iPhone companion/platform connectors with platform-specific capability declarations. Add Matter, Home Assistant or vendor-authorised home integrations, including AC where supported. Laptop input/session locking and physical passcode recovery require a separately reviewed operating-system design.
 
 ## Phase 06 — cameras, sensors and avatar expansion
 
-Add IP/CCTV and ESP32-CAM capture, laptop-side vision events and retention controls; a separate ESP32 sensor hub; then expand the humanoid into the optional second-monitor avatar experience.
+Add IP/CCTV and ESP32-CAM capture, laptop-side vision events and retention controls; a separate ESP32 sensor hub; then expand the humanoid into the optional second-monitor avatar experience. Camera and speaker-profile features require visible consent and must not treat voice identity as sufficient authorisation for sensitive actions.
+
+## Phase 07 — reviewed adaptive capabilities and expanded automation
+
+Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → human review → signed/versioned release → monitoring and rollback. Raw pages, documents, transcripts and model output remain untrusted data. Browser exact-target clicking, scoped coding automation, Git operations and deployment each require their own permission boundaries and tests before activation.
