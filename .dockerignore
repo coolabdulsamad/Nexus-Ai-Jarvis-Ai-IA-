@@ -1,0 +1,12 @@
+.git
+node_modules
+dist
+.venv
+.env
+.env.*
+data
+__pycache__
+.pytest_cache
+coverage
+*.log
+*.swp

@@ -1,0 +1,42 @@
+# Dependencies and builds
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+package-lock.json
+public/icons/*.png
+
+# Local configuration and credentials
+.env
+.env.local
+.env.*.local
+*.local
+
+# Local data — never commit personal memory
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tests and logs
+coverage/
+.nyc_output/
+.playwright-cli/
+logs/
+*.log
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.sw?
