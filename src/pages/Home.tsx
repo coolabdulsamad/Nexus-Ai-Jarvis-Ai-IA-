@@ -50,7 +50,8 @@ const quickCommands = [
   'What time is it?',
   'System status',
   'Take a note: review the camera connector plan',
-  'Open Chrome and search Google',
+  'Search Google for local AI safety',
+  'Show Git status',
 ]
 
 const defaultSettings: AssistantSettings = {
@@ -104,6 +105,35 @@ function EmptyState({ children }: { children: string }) {
       <span>{children}</span>
     </div>
   )
+}
+
+function approvalDetails(approval: Approval) {
+  if (approval.action === 'note.create') {
+    return {
+      label: 'NOTE / CREATE',
+      summary: approval.payload.content ?? '',
+      payload: '',
+      warning: 'Writes one note to your local database.',
+      pendingLabel: 'Saving…',
+    }
+  }
+  if (approval.action === 'terminal.git_status') {
+    return {
+      label: 'TERMINAL / READ ONLY',
+      summary: 'Inspect repository status',
+      payload: approval.payload.display_command ?? 'git status --short --branch',
+      warning: 'Runs once in the Nexus project root. Fixed arguments; no shell input or file changes.',
+      pendingLabel: 'Running…',
+    }
+  }
+  const searching = approval.action === 'browser.search'
+  return {
+    label: searching ? 'BROWSER / SEARCH' : 'BROWSER / NAVIGATE',
+    summary: searching ? `Search Google for “${approval.payload.query ?? ''}”` : 'Open a browser destination',
+    payload: approval.payload.url ?? '',
+    warning: 'Opens this exact HTTP/HTTPS destination once. No clicking or further browsing is authorised.',
+    pendingLabel: 'Opening…',
+  }
 }
 
 export default function Home() {
@@ -238,8 +268,9 @@ export default function Home() {
       setResult({
         command_id: outcome.command_id,
         intent: outcome.action,
-        status: decision === 'approve' ? 'completed' : 'rejected',
+        status: outcome.command_status,
         message: outcome.message,
+        output: outcome.output,
       })
       speak(outcome.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
@@ -295,7 +326,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">VOICE CORE / 0.2.0</span>
+          <span className="build-number">LOCAL CORE / 0.3.0</span>
         </div>
       </aside>
 
@@ -308,7 +339,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 02</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 03</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -336,7 +367,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 02</span>
+                <span className="phase-badge">PHASE 03</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -363,7 +394,7 @@ export default function Home() {
               )}
               <div className="globe-caption">
                 <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : 'AWAITING YOUR COMMAND'}</span>
-                <span>DRAG TO EXPLORE</span>
+                <span>DRAG · SCROLL · PINCH TO EXPLORE</span>
               </div>
               <div className="core-principles">
                 <span><Database size={14} /> SQLite memory</span>
@@ -451,6 +482,7 @@ export default function Home() {
                     <span>{shortId(result.command_id)}</span>
                   </div>
                   <p>{result.message}</p>
+                  {result.output && <pre className="command-output">{result.output}</pre>}
                 </div>
               )}
             </div>
@@ -482,29 +514,33 @@ export default function Home() {
                   <EmptyState>No pending requests. Nothing happens without you.</EmptyState>
                 ) : (
                   <div className="approval-list">
-                    {approvals.map((approval) => (
-                      <article className="approval-card" key={approval.id}>
-                        <div className="approval-meta"><span>NOTE / CREATE</span><span>{shortId(approval.id)}</span></div>
-                        <p>{approval.payload.content}</p>
-                        <div className="approval-warning"><KeyRound size={13} /> Writes one note to your local database.</div>
-                        <div className="approval-actions">
-                          <button
-                            className="reject-button"
-                            onClick={() => void decide(approval.id, 'reject')}
-                            disabled={Boolean(pendingAction)}
-                          >
-                            <X size={15} /> Reject
-                          </button>
-                          <button
-                            className="approve-button"
-                            onClick={() => void decide(approval.id, 'approve')}
-                            disabled={Boolean(pendingAction)}
-                          >
-                            <Check size={15} /> {pendingAction === `${approval.id}:approve` ? 'Saving…' : 'Approve'}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                    {approvals.map((approval) => {
+                      const details = approvalDetails(approval)
+                      return (
+                        <article className="approval-card" key={approval.id}>
+                          <div className="approval-meta"><span>{details.label}</span><span>{shortId(approval.id)}</span></div>
+                          <p>{details.summary}</p>
+                          {details.payload && <code className="approval-payload">{details.payload}</code>}
+                          <div className="approval-warning"><KeyRound size={13} /> {details.warning}</div>
+                          <div className="approval-actions">
+                            <button
+                              className="reject-button"
+                              onClick={() => void decide(approval.id, 'reject')}
+                              disabled={Boolean(pendingAction)}
+                            >
+                              <X size={15} /> Reject
+                            </button>
+                            <button
+                              className="approve-button"
+                              onClick={() => void decide(approval.id, 'approve')}
+                              disabled={Boolean(pendingAction)}
+                            >
+                              <Check size={15} /> {pendingAction === `${approval.id}:approve` ? details.pendingLabel : 'Approve'}
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -544,7 +580,7 @@ export default function Home() {
 
           <footer className="page-footer">
             <span><BrandMark small /> NEXUS LOCAL CORE</span>
-            <span>VOICE CORE ACTIVE <span className="footer-dot">·</span> CONNECTORS FOLLOW NEXT</span>
+            <span>LOCAL CONNECTORS ACTIVE <span className="footer-dot">·</span> EXPLICIT APPROVAL REQUIRED</span>
           </footer>
         </div>
       </main>

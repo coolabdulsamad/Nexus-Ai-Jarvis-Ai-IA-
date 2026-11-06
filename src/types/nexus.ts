@@ -4,6 +4,7 @@ export type CommandStatus =
   | 'rejected'
   | 'unavailable'
   | 'unsupported'
+  | 'failed'
 
 export type AvatarMode = 'globe' | 'humanoid'
 
@@ -45,7 +46,13 @@ export interface Approval {
   id: string
   command_id: string
   action: string
-  payload: { content?: string }
+  payload: {
+    content?: string
+    url?: string
+    query?: string
+    display_command?: string
+    working_directory?: string
+  }
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
   resolved_at: string | null
@@ -65,10 +72,13 @@ export interface CommandResult {
   intent: string
   status: CommandStatus
   message: string
+  output?: string | null
   approval?: Approval
 }
 
 export interface ApprovalResult extends Approval {
   note: Note | null
   message: string
+  output: string | null
+  command_status: CommandStatus
 }
