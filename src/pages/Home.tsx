@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import {
   Activity,
   ArrowUpRight,
+  AudioLines,
   BookOpen,
   Check,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   KeyRound,
   Menu,
   MessageSquareText,
+  Mic,
   MonitorCog,
   Network,
   NotebookPen,
@@ -20,16 +22,23 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Square,
   TerminalSquare,
+  UserRound,
   X,
   XCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import NexusGlobe from '@/components/NexusGlobe'
+import NexusHumanoid from '@/components/NexusHumanoid'
+import VoiceSettings from '@/components/VoiceSettings'
 import { nexusApi } from '@/lib/api'
 import { eventLabel, formatTimestamp, shortId } from '@/lib/presentation'
+import { useVoice } from '@/lib/useVoice'
 import type {
   Approval,
+  AssistantSettings,
+  AvatarMode,
   AuditEvent,
   Capability,
   CommandResult,
@@ -43,6 +52,13 @@ const quickCommands = [
   'Take a note: review the camera connector plan',
   'Open Chrome and search Google',
 ]
+
+const defaultSettings: AssistantSettings = {
+  assistant_name: 'Nexus',
+  voice_enabled: true,
+  voice_rate: 1,
+  avatar_mode: 'globe',
+}
 
 function BrandMark({ small = false }: { small?: boolean }) {
   return (
@@ -96,6 +112,7 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
+  const [settings, setSettings] = useState<AssistantSettings>(defaultSettings)
   const [command, setCommand] = useState('')
   const [result, setResult] = useState<CommandResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -103,22 +120,37 @@ export default function Home() {
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsBusy, setSettingsBusy] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const {
+    recognitionSupported,
+    listening,
+    speaking,
+    transcript,
+    viseme,
+    voiceError,
+    startListening,
+    stopListening,
+    speak,
+    stopSpeaking,
+  } = useVoice()
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextCapabilities, nextNotes, nextApprovals, nextAudit] = await Promise.all([
+      const [nextHealth, nextCapabilities, nextNotes, nextApprovals, nextAudit, nextSettings] = await Promise.all([
         nexusApi.health(),
         nexusApi.capabilities(),
         nexusApi.notes(),
         nexusApi.approvals('pending'),
         nexusApi.audit(),
+        nexusApi.settings(),
       ])
       setHealth(nextHealth)
       setCapabilities(nextCapabilities)
       setNotes(nextNotes)
       setApprovals(nextApprovals)
       setAudit(nextAudit)
+      setSettings(nextSettings)
       setError('')
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Cannot reach Nexus Local Core.')
@@ -142,22 +174,60 @@ export default function Home() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [])
 
-  const submitCommand = async (event?: FormEvent) => {
-    event?.preventDefault()
-    const text = command.trim()
-    if (!text || busy) return
+  const executeCommand = async (text: string) => {
+    const normalized = text.trim()
+    if (!normalized || busy) return
     setBusy(true)
     setError('')
     try {
-      const nextResult = await nexusApi.command(text)
+      const nextResult = await nexusApi.command(normalized)
       setResult(nextResult)
       setCommand('')
+      speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
     } catch (commandError) {
       setError(commandError instanceof Error ? commandError.message : 'Command failed safely.')
     } finally {
       setBusy(false)
     }
+  }
+
+  const submitCommand = (event?: FormEvent) => {
+    event?.preventDefault()
+    void executeCommand(command)
+  }
+
+  const startVoice = () => {
+    if (listening) {
+      stopListening()
+      return
+    }
+    startListening((text) => {
+      setCommand(text)
+      void executeCommand(text)
+    })
+  }
+
+  const changeAvatar = async (avatarMode: AvatarMode) => {
+    if (settingsBusy || avatarMode === settings.avatar_mode) return
+    const previous = settings
+    setSettings({ ...settings, avatar_mode: avatarMode })
+    setSettingsBusy(true)
+    try {
+      setSettings(await nexusApi.updateSettings({ avatar_mode: avatarMode }))
+      setError('')
+    } catch (settingsError) {
+      setSettings(previous)
+      setError(settingsError instanceof Error ? settingsError.message : 'Could not change the visual assistant.')
+    } finally {
+      setSettingsBusy(false)
+    }
+  }
+
+  const saveSettings = async (nextSettings: AssistantSettings) => {
+    const saved = await nexusApi.updateSettings(nextSettings)
+    setSettings(saved)
+    if (!saved.voice_enabled) stopSpeaking()
   }
 
   const decide = async (id: string, decision: 'approve' | 'reject') => {
@@ -171,6 +241,7 @@ export default function Home() {
         status: decision === 'approve' ? 'completed' : 'rejected',
         message: outcome.message,
       })
+      speak(outcome.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
     } catch (decisionError) {
       setError(decisionError instanceof Error ? decisionError.message : 'Could not resolve the request.')
@@ -218,13 +289,13 @@ export default function Home() {
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setSettingsOpen(true)}>
             <Settings size={18} strokeWidth={1.6} />
-            <span>Core details</span>
+            <span>Voice & core</span>
           </button>
           <div className="local-only-note">
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">FOUNDATION / 0.1.0</span>
+          <span className="build-number">VOICE CORE / 0.2.0</span>
         </div>
       </aside>
 
@@ -237,7 +308,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 01</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 02</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -262,14 +333,36 @@ export default function Home() {
               <div className="stage-grid" aria-hidden="true" />
               <div className="stage-heading">
                 <div>
-                  <span className="eyebrow yellow">NEXUS / LOCAL INTELLIGENCE</span>
+                  <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 01</span>
+                <span className="phase-badge">PHASE 02</span>
               </div>
-              <NexusGlobe active={busy} />
+              <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
+                <button
+                  className={settings.avatar_mode === 'globe' ? 'selected' : ''}
+                  onClick={() => void changeAvatar('globe')}
+                  aria-pressed={settings.avatar_mode === 'globe'}
+                  disabled={settingsBusy}
+                >
+                  <Globe2 size={14} /> Globe
+                </button>
+                <button
+                  className={settings.avatar_mode === 'humanoid' ? 'selected' : ''}
+                  onClick={() => void changeAvatar('humanoid')}
+                  aria-pressed={settings.avatar_mode === 'humanoid'}
+                  disabled={settingsBusy}
+                >
+                  <UserRound size={14} /> Humanoid
+                </button>
+              </div>
+              {settings.avatar_mode === 'globe' ? (
+                <NexusGlobe active={busy || listening || speaking} />
+              ) : (
+                <NexusHumanoid active={busy} listening={listening} speaking={speaking} viseme={viseme} />
+              )}
               <div className="globe-caption">
-                <span className="globe-mode"><Sparkles size={14} /> {busy ? 'PROCESSING REQUEST' : 'AWAITING YOUR COMMAND'}</span>
+                <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : 'AWAITING YOUR COMMAND'}</span>
                 <span>DRAG TO EXPLORE</span>
               </div>
               <div className="core-principles">
@@ -285,7 +378,7 @@ export default function Home() {
                 <span className="secure-label"><KeyRound size={12} /> PERMISSION GATED</span>
               </div>
               <h2>What are we doing next?</h2>
-              <p className="command-intro">Start with a local request. Nexus will explain anything that needs your approval before it happens.</p>
+              <p className="command-intro">Start with a local request. {settings.assistant_name} will explain anything that needs your approval before it happens.</p>
 
               <form onSubmit={submitCommand} className="command-form">
                 <label htmlFor="command-input">Your instruction</label>
@@ -298,7 +391,7 @@ export default function Home() {
                     onKeyDown={(event) => {
                       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void submitCommand()
                     }}
-                    placeholder="Tell Nexus what you need…"
+                    placeholder={`Tell ${settings.assistant_name} what you need…`}
                     rows={4}
                     maxLength={2000}
                     disabled={busy}
@@ -306,10 +399,39 @@ export default function Home() {
                   <span className="input-hint">⌘ / CTRL + ENTER</span>
                 </div>
                 <button className="send-button" type="submit" disabled={!command.trim() || busy}>
-                  <span>{busy ? 'Processing safely' : 'Send to Nexus'}</span>
+                  <span>{busy ? 'Processing safely' : `Send to ${settings.assistant_name}`}</span>
                   {busy ? <Activity size={18} className="spin" /> : <Send size={18} />}
                 </button>
               </form>
+
+              <div className="voice-controls" aria-label="Voice controls">
+                <button
+                  className={`microphone-button ${listening ? 'is-listening' : ''}`}
+                  onClick={startVoice}
+                  disabled={!recognitionSupported || busy}
+                  aria-pressed={listening}
+                >
+                  {listening ? <Square size={15} /> : <Mic size={16} />}
+                  {listening ? 'Stop listening' : `Speak to ${settings.assistant_name}`}
+                </button>
+                <button className="voice-settings-button" onClick={() => setSettingsOpen(true)}>
+                  <AudioLines size={16} /> Voice settings
+                </button>
+                {speaking && (
+                  <button className="stop-speaking" onClick={stopSpeaking}>
+                    <Square size={14} /> Stop speaking
+                  </button>
+                )}
+              </div>
+              <div className={`voice-status ${voiceError ? 'voice-status-error' : ''}`} aria-live="polite">
+                {voiceError || (listening
+                  ? transcript || 'Listening… speak now. Nothing is sent until speech is recognized.'
+                  : speaking
+                    ? `${settings.assistant_name} is speaking. Use Stop speaking to interrupt.`
+                    : recognitionSupported
+                      ? 'Microphone stays off until you choose Speak. Voice commands use the same approval path.'
+                      : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
+              </div>
 
               <div className="quick-commands">
                 <span className="eyebrow">TRY A WORKING COMMAND</span>
@@ -422,30 +544,25 @@ export default function Home() {
 
           <footer className="page-footer">
             <span><BrandMark small /> NEXUS LOCAL CORE</span>
-            <span>FOUNDATION COMPLETE <span className="footer-dot">·</span> VOICE & CONNECTORS FOLLOW NEXT</span>
+            <span>VOICE CORE ACTIVE <span className="footer-dot">·</span> CONNECTORS FOLLOW NEXT</span>
           </footer>
         </div>
       </main>
 
       {settingsOpen && (
-        <div className="modal-backdrop" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setSettingsOpen(false)
-        }}>
-          <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <button className="modal-close" onClick={() => setSettingsOpen(false)} aria-label="Close core details"><X size={19} /></button>
-            <BrandMark />
-            <span className="eyebrow yellow">CORE DETAILS</span>
-            <h2 id="settings-title">Local by design.</h2>
-            <p>The foundation runs on your machine. Notes, command outcomes and approval decisions are stored in SQLite; no cloud account is required.</p>
-            <dl className="core-details">
-              <div><dt>API</dt><dd>127.0.0.1:8000</dd></div>
-              <div><dt>Interface</dt><dd>localhost:3000</dd></div>
-              <div><dt>Database</dt><dd>data/nexus.db</dd></div>
-              <div><dt>Version</dt><dd>{health?.version ?? 'Unavailable'}</dd></div>
-            </dl>
-            <div className="settings-safety"><ShieldCheck size={18} /><span>Sensitive connectors will use the same request → review → approval → audit path.</span></div>
-          </section>
-        </div>
+        <VoiceSettings
+          settings={settings}
+          version={health?.version ?? 'Unavailable'}
+          speaking={speaking}
+          onClose={() => setSettingsOpen(false)}
+          onSave={saveSettings}
+          onPreview={(draft) => speak(
+            `Hello, I am ${draft.assistant_name}. Your local voice core is ready.`,
+            true,
+            draft.voice_rate,
+          )}
+          onStop={stopSpeaking}
+        />
       )}
     </div>
   )
