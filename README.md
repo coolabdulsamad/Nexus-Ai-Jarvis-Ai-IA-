@@ -44,7 +44,7 @@ Your local `data/nexus.db` is excluded from Git and remains on your machine.
 bash scripts/test.sh
 ```
 
-This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build. GitHub Actions runs the same core checks for pushes and pull requests.
+This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build.
 
 ## Windows 11 development
 

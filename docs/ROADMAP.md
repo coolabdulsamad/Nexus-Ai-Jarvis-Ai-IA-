@@ -1,12 +1,12 @@
 # Delivery roadmap
 
-## Phase 01 — foundation
+## Phase 01 — foundation (this commit)
 
 - Local FastAPI core and SQLite persistence.
 - React console with interactive yellow globe and PWA manifest.
 - Text commands, notes, approvals, rejection and audit history.
 - Honest unavailable responses for Chrome and home/AC requests.
-- Automated tests, development scripts, Docker and CI configuration.
+- Automated tests, development scripts and Docker configuration.
 
 ## Phase 02 — voice core
 
