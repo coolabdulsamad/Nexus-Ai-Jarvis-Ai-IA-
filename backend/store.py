@@ -82,6 +82,14 @@ class Store:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS memory_records (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL CHECK(kind IN ('preference', 'application', 'file', 'device', 'fact')),
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS audit_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     event_type TEXT NOT NULL,
@@ -183,6 +191,15 @@ class Store:
             "Approval required before saving this note.",
         )
 
+    def request_memory_approval(self, command_id: str, kind: str, content: str) -> dict[str, Any]:
+        return self.request_action_approval(
+            command_id,
+            "memory.create",
+            {"kind": kind, "content": content},
+            f"Permission requested to create a typed {kind} memory.",
+            f"Approval required before saving this {kind} memory.",
+        )
+
     def get_approval(self, approval_id: str) -> dict[str, Any]:
         with self.connection() as connection:
             row = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
@@ -205,6 +222,7 @@ class Store:
 
             resolved_at = utc_now()
             note = None
+            memory = None
             output = None
             payload = json.loads(row["payload"])
             if decision == "approved" and row["action"] == "note.create":
@@ -218,6 +236,20 @@ class Store:
                     (note["id"], note["content"], note["created_at"]),
                 )
                 response = "Note saved locally."
+                command_status = "completed"
+            elif decision == "approved" and row["action"] == "memory.create":
+                memory = {
+                    "id": str(uuid.uuid4()),
+                    "kind": payload["kind"],
+                    "content": payload["content"],
+                    "created_at": resolved_at,
+                    "updated_at": resolved_at,
+                }
+                connection.execute(
+                    "INSERT INTO memory_records(id, kind, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (memory["id"], memory["kind"], memory["content"], resolved_at, resolved_at),
+                )
+                response = f"{memory['kind'].capitalize()} memory saved locally."
                 command_status = "completed"
             elif decision == "approved":
                 action_result = (
@@ -235,7 +267,7 @@ class Store:
             else:
                 response = (
                     "Request rejected; nothing was saved."
-                    if row["action"] == "note.create"
+                    if row["action"] in {"note.create", "memory.create"}
                     else "Request rejected; no browser or terminal action was taken."
                 )
                 command_status = "rejected"
@@ -253,6 +285,7 @@ class Store:
                 connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
             )
             result["note"] = note
+            result["memory"] = memory
             result["message"] = response
             result["output"] = output
             result["command_status"] = command_status
@@ -291,6 +324,29 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_memories(self, kind: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        query = "SELECT id, kind, content, created_at, updated_at FROM memory_records"
+        parameters: list[Any] = []
+        if kind:
+            query += " WHERE kind = ?"
+            parameters.append(kind)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self.connection() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_conversations(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, input_text, intent, status, response, created_at
+                FROM commands ORDER BY created_at DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_approvals(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         query = "SELECT * FROM approvals"
         parameters: list[Any] = []
@@ -318,4 +374,12 @@ class Store:
                 "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"
             ).fetchone()[0]
             events = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
-        return {"notes": notes, "pending_approvals": pending, "audit_events": events}
+            memories = connection.execute("SELECT COUNT(*) FROM memory_records").fetchone()[0]
+            conversations = connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0]
+        return {
+            "notes": notes,
+            "pending_approvals": pending,
+            "audit_events": events,
+            "memory_records": memories,
+            "conversations": conversations,
+        }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +23,10 @@ DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "nexus.db"
 
 class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
+
+
+class ApprovalDecision(BaseModel):
+    client_browser: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -96,6 +101,18 @@ def create_app() -> FastAPI:
     def notes(request: Request, limit: int = Query(default=100, ge=1, le=100)) -> dict:
         return {"notes": store(request).list_notes(limit)}
 
+    @app.get("/api/memories", tags=["memory"])
+    def memories(
+        request: Request,
+        kind: Literal["preference", "application", "file", "device", "fact"] | None = None,
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict:
+        return {"memories": store(request).list_memories(kind, limit)}
+
+    @app.get("/api/conversations", tags=["memory"])
+    def conversations(request: Request, limit: int = Query(default=50, ge=1, le=100)) -> dict:
+        return {"conversations": store(request).list_conversations(limit)}
+
     @app.get("/api/approvals", tags=["approvals"])
     def approvals(
         request: Request,
@@ -105,9 +122,13 @@ def create_app() -> FastAPI:
         return {"approvals": store(request).list_approvals(status, limit)}
 
     @app.post("/api/approvals/{approval_id}/approve", tags=["approvals"])
-    def approve(approval_id: str, request: Request) -> dict:
+    def approve(approval_id: str, request: Request, payload: ApprovalDecision | None = None) -> dict:
+        executor = partial(
+            execute_approved_action,
+            client_browser=bool(payload and payload.client_browser),
+        )
         try:
-            return store(request).resolve_approval(approval_id, "approved", execute_approved_action)
+            return store(request).resolve_approval(approval_id, "approved", executor)
         except NotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ApprovalResolvedError as error:

@@ -25,6 +25,13 @@ CAPABILITIES = [
         "description": "Save and list notes after explicit approval.",
     },
     {
+        "id": "memory",
+        "label": "Typed memory & timeline",
+        "status": "available",
+        "tier": 1,
+        "description": "Persist approved preferences, applications, files, devices and facts, plus command/response history.",
+    },
+    {
         "id": "audit",
         "label": "Command audit history",
         "status": "available",
@@ -76,6 +83,17 @@ def _note_content(text: str) -> str | None:
         flags=re.IGNORECASE | re.DOTALL,
     )
     return match.group(1).strip() if match else None
+
+
+def _memory_request(text: str) -> tuple[str, str] | None:
+    match = re.match(
+        r"^(?:please\s+)?remember\s+(preference|application|file|device|fact)\s*[:\-]\s+(.+)$",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    return match.group(1).lower(), match.group(2).strip()
 
 
 def _browser_request(text: str) -> tuple[str, dict[str, Any]] | None:
@@ -146,9 +164,12 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
     normalized = " ".join(text.strip().split())
     lowered = normalized.lower().rstrip("?!")
     note_content = _note_content(normalized)
+    memory_request = _memory_request(normalized)
     browser_request = _browser_request(normalized)
 
-    if note_content:
+    if memory_request:
+        intent = "memory.create"
+    elif note_content:
         intent = "note.create"
     elif lowered in {"what time is it", "time", "current time", "what is the time"}:
         intent = "system.time"
@@ -156,6 +177,10 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         intent = "system.status"
     elif lowered in {"list notes", "show notes", "read my notes", "list my notes"}:
         intent = "note.list"
+    elif lowered in {"list memory", "show memory", "list memories", "show memories"}:
+        intent = "memory.list"
+    elif lowered in {"show timeline", "conversation history", "show conversation history"}:
+        intent = "conversation.list"
     elif lowered in {
         "git status",
         "show git status",
@@ -179,6 +204,16 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
 
     command_id = store.create_command(normalized, intent)
     base: dict[str, Any] = {"command_id": command_id, "intent": intent}
+
+    if intent == "memory.create" and memory_request:
+        kind, content = memory_request
+        approval = store.request_memory_approval(command_id, kind, content)
+        return {
+            **base,
+            "status": "approval_required",
+            "message": f"I’m ready to save this {kind} memory. Review the request and approve or reject it.",
+            "approval": approval,
+        }
 
     if intent == "note.create":
         approval = store.request_note_approval(command_id, note_content or "")
@@ -240,6 +275,23 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             else "Latest notes: " + " | ".join(note["content"] for note in notes)
         )
         status = "completed"
+    elif intent == "memory.list":
+        memories = store.list_memories(limit=10)
+        message = (
+            "No typed memories are stored yet."
+            if not memories
+            else "Latest typed memories: "
+            + " | ".join(f"{memory['kind']}: {memory['content']}" for memory in memories)
+        )
+        status = "completed"
+    elif intent == "conversation.list":
+        conversations = store.list_conversations(10)
+        message = (
+            "No conversation history is stored yet."
+            if not conversations
+            else f"{len(conversations)} recent command(s) are available in the Memory timeline."
+        )
+        status = "completed"
     elif intent == "browser.unsupported":
         message = (
             "I can open an HTTP/HTTPS site or search Google after approval. "
@@ -258,7 +310,7 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
     else:
         message = (
             "I don’t have a safe, configured skill for that yet. Try time, status, list notes, "
-            "take a note, open a website, search Google, or show Git status."
+            "remember preference: your preference, show memory, open a website, search Google, or show Git status."
         )
         status = "unsupported"
 

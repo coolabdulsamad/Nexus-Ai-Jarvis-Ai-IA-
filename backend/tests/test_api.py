@@ -259,3 +259,75 @@ def test_browser_unavailable_is_reported_honestly(monkeypatch, tmp_path):
         assert outcome["status"] == "approved"
         assert outcome["command_status"] == "unavailable"
         assert "Nothing was launched" in outcome["message"]
+
+
+
+def test_console_browser_approval_uses_client_handoff(monkeypatch, tmp_path):
+    launched = []
+    monkeypatch.setattr(
+        "backend.connectors.subprocess.Popen",
+        lambda *args, **kwargs: launched.append((args, kwargs)),
+    )
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post("/api/commands", json={"text": "Open example.com"}).json()
+        outcome = api.post(
+            f"/api/approvals/{command['approval']['id']}/approve",
+            json={"client_browser": True},
+        ).json()
+        assert outcome["command_status"] == "completed"
+        assert outcome["payload"]["url"] == "https://example.com"
+        assert "this browser" in outcome["message"]
+        assert launched == []
+
+
+def test_typed_memory_requires_approval_and_persists(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post(
+            "/api/commands",
+            json={"text": "Remember preference: I prefer concise answers"},
+        ).json()
+        assert command["intent"] == "memory.create"
+        assert command["status"] == "approval_required"
+        assert api.get("/api/memories").json()["memories"] == []
+
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        assert outcome["memory"]["kind"] == "preference"
+        assert outcome["memory"]["content"] == "I prefer concise answers"
+        memories = api.get("/api/memories?kind=preference").json()["memories"]
+        assert len(memories) == 1
+        assert api.get("/api/memories?kind=device").json()["memories"] == []
+        assert api.get("/api/health").json()["memory_records"] == 1
+
+    with make_client(monkeypatch, tmp_path) as restarted:
+        memories = restarted.get("/api/memories").json()["memories"]
+        assert memories[0]["content"] == "I prefer concise answers"
+
+
+def test_rejected_typed_memory_creates_no_record(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post(
+            "/api/commands",
+            json={"text": "Remember device: Office sensor hub"},
+        ).json()
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/reject").json()
+        assert outcome["command_status"] == "rejected"
+        assert outcome["memory"] is None
+        assert api.get("/api/memories").json()["memories"] == []
+
+
+def test_conversation_timeline_tracks_command_outcomes(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        completed = api.post("/api/commands", json={"text": "What time is it?"}).json()
+        pending = api.post("/api/commands", json={"text": "Show Git status"}).json()
+        api.post(f"/api/approvals/{pending['approval']['id']}/reject")
+
+        conversations = api.get("/api/conversations").json()["conversations"]
+        by_id = {entry["id"]: entry for entry in conversations}
+        assert by_id[completed["command_id"]]["status"] == "completed"
+        assert "UTC" in by_id[completed["command_id"]]["response"]
+        assert by_id[pending["command_id"]]["status"] == "rejected"
+        assert api.get("/api/health").json()["conversations"] == 2
+
+        listed = api.post("/api/commands", json={"text": "Show memory"}).json()
+        assert listed["status"] == "completed"
+        assert "No typed memories" in listed["message"]

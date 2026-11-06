@@ -49,11 +49,18 @@ def _chrome_command(url: str) -> tuple[list[str], str] | None:
     return None
 
 
-def open_browser(payload: dict[str, Any]) -> dict[str, Any]:
+def open_browser(payload: dict[str, Any], client_browser: bool = False) -> dict[str, Any]:
     try:
         url = validated_browser_url(payload.get("url"))
     except ValueError as error:
         return {"status": "failed", "message": str(error), "output": None}
+
+    if client_browser:
+        return {
+            "status": "completed",
+            "message": f"Approval confirmed. Opening the exact destination in this browser: {url}",
+            "output": None,
+        }
 
     try:
         chrome = _chrome_command(url)
@@ -127,9 +134,13 @@ def git_status(_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def execute_approved_action(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+def execute_approved_action(
+    action: str,
+    payload: dict[str, Any],
+    client_browser: bool = False,
+) -> dict[str, Any]:
     if action in {"browser.navigate", "browser.search"}:
-        return open_browser(payload)
+        return open_browser(payload, client_browser=client_browser)
     if action == "terminal.git_status":
         return git_status(payload)
     return {
