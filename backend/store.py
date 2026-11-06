@@ -6,7 +6,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 
 def utc_now() -> str:
@@ -153,26 +153,35 @@ class Store:
             )
             self.audit(connection, f"command.{status}", status, response, command_id)
 
-    def request_note_approval(self, command_id: str, content: str) -> dict[str, Any]:
+    def request_action_approval(
+        self,
+        command_id: str,
+        action: str,
+        payload: dict[str, Any],
+        detail: str,
+        response: str,
+    ) -> dict[str, Any]:
         approval_id = str(uuid.uuid4())
-        payload = {"content": content}
         with self.connection() as connection:
             connection.execute(
-                "INSERT INTO approvals(id, command_id, action, payload, status, created_at) VALUES (?, ?, 'note.create', ?, 'pending', ?)",
-                (approval_id, command_id, json.dumps(payload), utc_now()),
+                "INSERT INTO approvals(id, command_id, action, payload, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+                (approval_id, command_id, action, json.dumps(payload), utc_now()),
             )
             connection.execute(
                 "UPDATE commands SET status = 'approval_required', response = ?, approval_id = ? WHERE id = ?",
-                ("Approval required before saving this note.", approval_id, command_id),
+                (response, approval_id, command_id),
             )
-            self.audit(
-                connection,
-                "approval.requested",
-                "pending",
-                "Permission requested to create a local note.",
-                approval_id,
-            )
+            self.audit(connection, "approval.requested", "pending", detail, approval_id)
         return self.get_approval(approval_id)
+
+    def request_note_approval(self, command_id: str, content: str) -> dict[str, Any]:
+        return self.request_action_approval(
+            command_id,
+            "note.create",
+            {"content": content},
+            "Permission requested to create a local note.",
+            "Approval required before saving this note.",
+        )
 
     def get_approval(self, approval_id: str) -> dict[str, Any]:
         with self.connection() as connection:
@@ -181,7 +190,12 @@ class Store:
             raise NotFoundError("Approval request not found.")
         return self._approval(row)
 
-    def resolve_approval(self, approval_id: str, decision: str) -> dict[str, Any]:
+    def resolve_approval(
+        self,
+        approval_id: str,
+        decision: str,
+        action_executor: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         with self.connection() as connection:
             row = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
             if row is None:
@@ -191,8 +205,9 @@ class Store:
 
             resolved_at = utc_now()
             note = None
+            output = None
+            payload = json.loads(row["payload"])
             if decision == "approved" and row["action"] == "note.create":
-                payload = json.loads(row["payload"])
                 note = {
                     "id": str(uuid.uuid4()),
                     "content": payload["content"],
@@ -202,28 +217,45 @@ class Store:
                     "INSERT INTO notes(id, content, created_at) VALUES (?, ?, ?)",
                     (note["id"], note["content"], note["created_at"]),
                 )
+                response = "Note saved locally."
+                command_status = "completed"
+            elif decision == "approved":
+                action_result = (
+                    action_executor(row["action"], payload)
+                    if action_executor
+                    else {
+                        "status": "failed",
+                        "message": "No approved connector is configured. Nothing was executed.",
+                        "output": None,
+                    }
+                )
+                response = str(action_result["message"])
+                command_status = str(action_result["status"])
+                output = action_result.get("output")
+            else:
+                response = (
+                    "Request rejected; nothing was saved."
+                    if row["action"] == "note.create"
+                    else "Request rejected; no browser or terminal action was taken."
+                )
+                command_status = "rejected"
 
-            response = "Note saved locally." if note else "Request rejected; nothing was saved."
             connection.execute(
                 "UPDATE approvals SET status = ?, resolved_at = ? WHERE id = ?",
                 (decision, resolved_at, approval_id),
             )
             connection.execute(
                 "UPDATE commands SET status = ?, response = ? WHERE id = ?",
-                ("completed" if decision == "approved" else "rejected", response, row["command_id"]),
+                (command_status, response, row["command_id"]),
             )
-            self.audit(
-                connection,
-                f"approval.{decision}",
-                decision,
-                response,
-                approval_id,
-            )
+            self.audit(connection, f"approval.{decision}", decision, response, approval_id)
             result = self._approval(
                 connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
             )
             result["note"] = note
             result["message"] = response
+            result["output"] = output
+            result["command_status"] = command_status
             return result
 
     def get_settings(self) -> dict[str, Any]:

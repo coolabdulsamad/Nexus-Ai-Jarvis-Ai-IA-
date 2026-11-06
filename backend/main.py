@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .commands import CAPABILITIES, handle_command
+from .connectors import execute_approved_action
 from .store import ApprovalResolvedError, NotFoundError, Store, utc_now
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -106,7 +107,7 @@ def create_app() -> FastAPI:
     @app.post("/api/approvals/{approval_id}/approve", tags=["approvals"])
     def approve(approval_id: str, request: Request) -> dict:
         try:
-            return store(request).resolve_approval(approval_id, "approved")
+            return store(request).resolve_approval(approval_id, "approved", execute_approved_action)
         except NotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ApprovalResolvedError as error:
