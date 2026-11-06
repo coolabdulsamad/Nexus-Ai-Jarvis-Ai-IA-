@@ -6,7 +6,9 @@ import type {
   AuditEvent,
   Capability,
   CommandResult,
+  ConversationEntry,
   Health,
+  MemoryRecord,
   Note,
 } from '@/types/nexus'
 
@@ -28,6 +30,9 @@ export const nexusApi = {
   health: () => request<Health>('/api/health'),
   capabilities: async () => (await request<{ capabilities: Capability[] }>('/api/capabilities')).capabilities,
   notes: async () => (await request<{ notes: Note[] }>('/api/notes')).notes,
+  memories: async () => (await request<{ memories: MemoryRecord[] }>('/api/memories')).memories,
+  conversations: async () =>
+    (await request<{ conversations: ConversationEntry[] }>('/api/conversations?limit=50')).conversations,
   approvals: async (status?: string) =>
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
@@ -36,6 +41,9 @@ export const nexusApi = {
     request<AssistantSettings>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   command: (text: string) =>
     request<CommandResult>('/api/commands', { method: 'POST', body: JSON.stringify({ text }) }),
-  approve: (id: string) => request<ApprovalResult>(`/api/approvals/${id}/approve`, { method: 'POST' }),
+  approve: (id: string, clientBrowser = false) => request<ApprovalResult>(`/api/approvals/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ client_browser: clientBrowser }),
+  }),
   reject: (id: string) => request<ApprovalResult>(`/api/approvals/${id}/reject`, { method: 'POST' }),
 }

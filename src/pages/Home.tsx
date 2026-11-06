@@ -42,7 +42,9 @@ import type {
   AuditEvent,
   Capability,
   CommandResult,
+  ConversationEntry,
   Health,
+  MemoryRecord,
   Note,
 } from '@/types/nexus'
 
@@ -50,6 +52,7 @@ const quickCommands = [
   'What time is it?',
   'System status',
   'Take a note: review the camera connector plan',
+  'Remember preference: I prefer concise answers',
   'Search Google for local AI safety',
   'Show Git status',
 ]
@@ -117,6 +120,16 @@ function approvalDetails(approval: Approval) {
       pendingLabel: 'Saving…',
     }
   }
+  if (approval.action === 'memory.create') {
+    const kind = approval.payload.kind ?? 'fact'
+    return {
+      label: `MEMORY / ${kind.toUpperCase()}`,
+      summary: approval.payload.content ?? '',
+      payload: '',
+      warning: `Writes one ${kind} record to your local memory database.`,
+      pendingLabel: 'Saving…',
+    }
+  }
   if (approval.action === 'terminal.git_status') {
     return {
       label: 'TERMINAL / READ ONLY',
@@ -140,6 +153,9 @@ export default function Home() {
   const [health, setHealth] = useState<Health | null>(null)
   const [capabilities, setCapabilities] = useState<Capability[]>([])
   const [notes, setNotes] = useState<Note[]>([])
+  const [memories, setMemories] = useState<MemoryRecord[]>([])
+  const [conversations, setConversations] = useState<ConversationEntry[]>([])
+  const [memoryView, setMemoryView] = useState<'notes' | 'typed' | 'timeline'>('notes')
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
   const [settings, setSettings] = useState<AssistantSettings>(defaultSettings)
@@ -167,10 +183,21 @@ export default function Home() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextCapabilities, nextNotes, nextApprovals, nextAudit, nextSettings] = await Promise.all([
+      const [
+        nextHealth,
+        nextCapabilities,
+        nextNotes,
+        nextMemories,
+        nextConversations,
+        nextApprovals,
+        nextAudit,
+        nextSettings,
+      ] = await Promise.all([
         nexusApi.health(),
         nexusApi.capabilities(),
         nexusApi.notes(),
+        nexusApi.memories(),
+        nexusApi.conversations(),
         nexusApi.approvals('pending'),
         nexusApi.audit(),
         nexusApi.settings(),
@@ -178,6 +205,8 @@ export default function Home() {
       setHealth(nextHealth)
       setCapabilities(nextCapabilities)
       setNotes(nextNotes)
+      setMemories(nextMemories)
+      setConversations(nextConversations)
       setApprovals(nextApprovals)
       setAudit(nextAudit)
       setSettings(nextSettings)
@@ -213,6 +242,8 @@ export default function Home() {
       const nextResult = await nexusApi.command(normalized)
       setResult(nextResult)
       setCommand('')
+      if (nextResult.intent === 'memory.list') setMemoryView('typed')
+      if (nextResult.intent === 'conversation.list') setMemoryView('timeline')
       speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
     } catch (commandError) {
@@ -261,10 +292,39 @@ export default function Home() {
   }
 
   const decide = async (id: string, decision: 'approve' | 'reject') => {
+    const approval = approvals.find((item) => item.id === id)
+    const browserAction = approval?.action.startsWith('browser.') ?? false
+    let approvedTab: Window | null = null
+
+    if (decision === 'approve' && approval && browserAction) {
+      approvedTab = window.open('about:blank', '_blank')
+      if (!approvedTab) {
+        const message = 'Your browser blocked the new tab. Allow pop-ups for Nexus, then approve again; the request is still pending.'
+        setResult({
+          command_id: approval.command_id,
+          intent: approval.action,
+          status: 'unavailable',
+          message,
+        })
+        speak(message, settings.voice_enabled, settings.voice_rate)
+        return
+      }
+      approvedTab.opener = null
+    }
+
     setPendingAction(`${id}:${decision}`)
     setError('')
     try {
-      const outcome = decision === 'approve' ? await nexusApi.approve(id) : await nexusApi.reject(id)
+      const outcome = decision === 'approve'
+        ? await nexusApi.approve(id, browserAction)
+        : await nexusApi.reject(id)
+      if (approvedTab) {
+        if (outcome.command_status === 'completed' && outcome.payload.url) {
+          approvedTab.location.replace(outcome.payload.url)
+        } else {
+          approvedTab.close()
+        }
+      }
       setResult({
         command_id: outcome.command_id,
         intent: outcome.action,
@@ -272,9 +332,11 @@ export default function Home() {
         message: outcome.message,
         output: outcome.output,
       })
+      if (outcome.memory) setMemoryView('typed')
       speak(outcome.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
     } catch (decisionError) {
+      approvedTab?.close()
       setError(decisionError instanceof Error ? decisionError.message : 'Could not resolve the request.')
     } finally {
       setPendingAction('')
@@ -288,7 +350,7 @@ export default function Home() {
 
   const navItems: { id: string; label: string; icon: LucideIcon; count?: number }[] = [
     { id: 'console', label: 'Console', icon: TerminalSquare },
-    { id: 'notes', label: 'Memory', icon: NotebookPen, count: notes.length },
+    { id: 'notes', label: 'Memory', icon: NotebookPen, count: notes.length + memories.length },
     { id: 'approvals', label: 'Approvals', icon: ShieldCheck, count: approvals.length },
     { id: 'audit', label: 'Audit trail', icon: FileClock },
     { id: 'connectors', label: 'Connectors', icon: Network },
@@ -326,7 +388,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.3.0</span>
+          <span className="build-number">LOCAL CORE / 0.4.0</span>
         </div>
       </aside>
 
@@ -339,7 +401,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 03</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 04</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -367,7 +429,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 03</span>
+                <span className="phase-badge">PHASE 04</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -490,16 +552,80 @@ export default function Home() {
 
           <div className="workspace-grid">
             <section id="notes" className="workspace-panel page-anchor">
-              <SectionHeading eyebrow="PERSISTENT MEMORY" title="Local notes" icon={BookOpen} aside={`${notes.length} STORED`} />
-              <div className="panel-body">
-                {loading ? <EmptyState>Reading local memory…</EmptyState> : notes.length === 0 ? (
-                  <EmptyState>No saved notes. Ask Nexus to take a note.</EmptyState>
+              <SectionHeading
+                eyebrow="PERSISTENT MEMORY"
+                title="Memory"
+                icon={BookOpen}
+                aside={`${notes.length + memories.length} RECORDS`}
+              />
+              <div className="memory-tabs" role="tablist" aria-label="Memory views">
+                {([
+                  ['notes', 'Notes', notes.length],
+                  ['typed', 'Typed memory', memories.length],
+                  ['timeline', 'Timeline', conversations.length],
+                ] as const).map(([view, label, count]) => (
+                  <button
+                    id={`memory-tab-${view}`}
+                    key={view}
+                    role="tab"
+                    aria-selected={memoryView === view}
+                    aria-controls={`memory-panel-${view}`}
+                    className={memoryView === view ? 'selected' : ''}
+                    onClick={() => setMemoryView(view)}
+                  >
+                    {label}<span>{count}</span>
+                  </button>
+                ))}
+              </div>
+              <div
+                className="panel-body memory-panel-body"
+                id={`memory-panel-${memoryView}`}
+                role="tabpanel"
+                aria-labelledby={`memory-tab-${memoryView}`}
+              >
+                {loading ? <EmptyState>Reading local memory…</EmptyState> : memoryView === 'notes' ? (
+                  notes.length === 0 ? (
+                    <EmptyState>No saved notes. Ask Nexus to take a note.</EmptyState>
+                  ) : (
+                    <div className="notes-list">
+                      {notes.slice(0, 6).map((note, index) => (
+                        <article className="note-row" key={note.id}>
+                          <span className="note-index">{String(index + 1).padStart(2, '0')}</span>
+                          <div><p>{note.content}</p><time>{formatTimestamp(note.created_at)}</time></div>
+                        </article>
+                      ))}
+                    </div>
+                  )
+                ) : memoryView === 'typed' ? (
+                  memories.length === 0 ? (
+                    <EmptyState>No typed memories. Try “Remember preference: I prefer concise answers”.</EmptyState>
+                  ) : (
+                    <div className="memory-list">
+                      {memories.slice(0, 8).map((memory) => (
+                        <article className="memory-row" key={memory.id}>
+                          <span className={`memory-kind memory-kind-${memory.kind}`}>{memory.kind}</span>
+                          <p>{memory.content}</p>
+                          <time>{formatTimestamp(memory.created_at)}</time>
+                        </article>
+                      ))}
+                    </div>
+                  )
+                ) : conversations.length === 0 ? (
+                  <EmptyState>No commands yet. Your command and response history will appear here.</EmptyState>
                 ) : (
-                  <div className="notes-list">
-                    {notes.slice(0, 6).map((note, index) => (
-                      <article className="note-row" key={note.id}>
-                        <span className="note-index">{String(index + 1).padStart(2, '0')}</span>
-                        <div><p>{note.content}</p><time>{formatTimestamp(note.created_at)}</time></div>
+                  <div className="conversation-list">
+                    {conversations.slice(0, 10).map((entry) => (
+                      <article className="conversation-row" key={entry.id}>
+                        <span className={`timeline-marker status-${entry.status}`} aria-hidden="true" />
+                        <div className="conversation-content">
+                          <div className="conversation-meta">
+                            <span>{entry.intent.replaceAll('.', ' / ')}</span>
+                            <time>{formatTimestamp(entry.created_at)}</time>
+                          </div>
+                          <p className="conversation-input">{entry.input_text}</p>
+                          <p className="conversation-response">{entry.response}</p>
+                          <span className={`conversation-status status-${entry.status}`}>{entry.status.replaceAll('_', ' ')}</span>
+                        </div>
                       </article>
                     ))}
                   </div>

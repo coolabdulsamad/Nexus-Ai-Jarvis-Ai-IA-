@@ -171,6 +171,35 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .note-index { color: #6b6345; font: 9px ui-monospace, monospace; padding-top: 3px; }
 .note-row p { margin: 0; color: #d0d1c7; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .note-row time { display: block; margin-top: 6px; color: var(--faint); font: 9px ui-monospace, monospace; }
+.memory-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line-soft); }
+.memory-tabs button { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 45px; padding: 0 8px; border: 0; border-right: 1px solid var(--line-soft); background: #0e0f0f; color: var(--faint); cursor: pointer; font-size: 10px; }
+.memory-tabs button:last-child { border-right: 0; }
+.memory-tabs button:hover { color: var(--text); background: #141512; }
+.memory-tabs button.selected { color: var(--yellow); background: #191810; }
+.memory-tabs button.selected::after { content: ""; position: absolute; right: 15px; bottom: -1px; left: 15px; height: 1px; background: var(--yellow); }
+.memory-tabs button span { min-width: 17px; padding: 1px 4px; background: #23231b; color: #9b915f; font: 8px ui-monospace, monospace; }
+.memory-panel-body { min-height: 310px; max-height: 435px; overflow-y: auto; }
+.memory-list, .conversation-list { padding: 0 22px 8px; }
+.memory-row { display: grid; grid-template-columns: 83px minmax(0, 1fr); gap: 8px 12px; padding: 15px 0; border-bottom: 1px solid var(--line-soft); }
+.memory-row:last-child { border-bottom: 0; }
+.memory-kind { align-self: start; padding: 4px 6px; border: 1px solid #494127; color: #c5ac58; font: 8px ui-monospace, monospace; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+.memory-kind-preference { border-color: #5d512d; color: var(--yellow); }
+.memory-kind-device { border-color: #394d38; color: var(--green); }
+.memory-row p { margin: 0; color: #d0d1c7; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.memory-row time { grid-column: 2; color: var(--faint); font: 8px ui-monospace, monospace; }
+.conversation-row { position: relative; display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 11px; padding: 15px 0; border-bottom: 1px solid var(--line-soft); }
+.conversation-row:last-child { border-bottom: 0; }
+.timeline-marker { width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 4px #191a18; }
+.timeline-marker.status-completed { background: var(--green); }
+.timeline-marker.status-approval_required { background: var(--yellow); }
+.timeline-marker.status-rejected, .timeline-marker.status-failed { background: var(--red); }
+.conversation-content { min-width: 0; }
+.conversation-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--faint); font: 8px ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; }
+.conversation-meta time { flex: 0 0 auto; }
+.conversation-input { margin: 8px 0 0; color: #dedfd4; font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
+.conversation-response { margin: 5px 0 0; color: #858b81; font-size: 10px; line-height: 1.55; overflow-wrap: anywhere; }
+.conversation-status { display: inline-block; margin-top: 8px; color: var(--faint); font: 8px ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; }
+.conversation-status.status-approval_required { color: var(--yellow); }
 .approval-list { padding: 17px 20px; }
 .approval-card { padding: 15px; border: 1px solid #464026; background: #171710; }
 .approval-card + .approval-card { margin-top: 12px; }
@@ -299,7 +328,11 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .quick-command-list { display: flex; }
   .section-heading { padding: 16px; }
   .section-aside { font-size: 7px; }
-  .notes-list, .connector-list, .audit-table { padding-left: 16px; padding-right: 16px; }
+  .notes-list, .memory-list, .conversation-list, .connector-list, .audit-table { padding-left: 16px; padding-right: 16px; }
+  .memory-tabs button { gap: 5px; font-size: 9px; }
+  .memory-tabs button span { display: none; }
+  .memory-row { grid-template-columns: 72px minmax(0, 1fr); gap: 8px; }
+  .conversation-meta { align-items: flex-start; flex-direction: column; gap: 4px; }
   .connector-row { grid-template-columns: 7px minmax(0, 1fr) 55px; gap: 10px; }
   .tier-label { display: none; }
   .audit-header, .audit-row { grid-template-columns: 1fr 65px; }

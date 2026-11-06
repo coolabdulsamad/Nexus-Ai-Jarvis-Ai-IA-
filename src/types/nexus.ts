@@ -26,6 +26,27 @@ export interface Health {
   notes: number
   pending_approvals: number
   audit_events: number
+  memory_records: number
+  conversations: number
+}
+
+export type MemoryKind = 'preference' | 'application' | 'file' | 'device' | 'fact'
+
+export interface MemoryRecord {
+  id: string
+  kind: MemoryKind
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationEntry {
+  id: string
+  input_text: string
+  intent: string
+  status: CommandStatus | 'processing'
+  response: string
+  created_at: string
 }
 
 export interface Capability {
@@ -48,6 +69,7 @@ export interface Approval {
   action: string
   payload: {
     content?: string
+    kind?: MemoryKind
     url?: string
     query?: string
     display_command?: string
@@ -78,6 +100,7 @@ export interface CommandResult {
 
 export interface ApprovalResult extends Approval {
   note: Note | null
+  memory: MemoryRecord | null
   message: string
   output: string | null
   command_status: CommandStatus
