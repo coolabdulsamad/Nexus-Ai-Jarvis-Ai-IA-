@@ -5,10 +5,9 @@
 - Local FastAPI core and SQLite persistence.
 - React console with interactive yellow globe and PWA manifest.
 - Text commands, notes, approvals, rejection and audit history.
-- Honest unavailable responses for Chrome and home/AC requests.
 - Automated tests, development scripts and Docker configuration.
 
-## Phase 02 — voice interaction (this commit)
+## Phase 02 — voice interaction (delivered)
 
 - Explicit push-to-talk microphone input using the browser Web Speech API.
 - Spoken command results, speech-rate control and immediate interruption.
@@ -18,13 +17,20 @@
 
 This is the browser voice slice, not a claim of fully offline speech. Wake-word detection and locally hosted speech-to-text/text-to-speech models remain voice-hardening work. Browser recognition availability and network behaviour depend on the browser and operating system.
 
-## Phase 03 — browser and terminal connectors
+## Phase 03 — visual world and scoped connectors (delivered)
 
-Add allowlisted browser navigation and exact-target action previews. Add scoped terminal skills with working-directory limits, timeouts, output capture and tiered approval. No arbitrary command catalogue should bypass policy.
+- Rebuilt the globe as a dense procedural particle world with terrain-like fields, graticules, lifted network arcs, moving packets, satellites, orbital rings and atmospheric dust.
+- Rebuilt the humanoid with deterministic facial, jaw, neck and torso particles; structured eyes, nose and mouth; speech/viseme-driven jaw movement; and an animated chest core.
+- Added drag rotation, scroll/pinch zoom, dedicated zoom-in/zoom-out controls and camera reset to both models, with responsive and reduced-motion behaviour.
+- Added approval-gated HTTP/HTTPS browser navigation and Google search through Chrome/Chromium or the default browser.
+- Added one fixed, read-only `git status --short --branch` terminal action with approval, fixed arguments, no shell, a timeout and captured output.
+- Added action-specific approval cards, honest connector outcomes and expanded backend safety tests.
+
+Exact-target clicking, form submission, arbitrary shell commands, coding automation, Git push and deployment are not part of this slice.
 
 ## Phase 04 — memory and adaptive skills
 
-Expand typed memory for preferences, applications, files, conversations and device events. Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → review → signed/versioned release → monitoring and rollback.
+Expand typed memory for preferences, applications, files, conversations and device events. Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → review → signed/versioned release → monitoring and rollback. Browser exact-target clicking and broader terminal/coding skills require separate scoped designs and tests.
 
 ## Phase 05 — owned devices and home
 
