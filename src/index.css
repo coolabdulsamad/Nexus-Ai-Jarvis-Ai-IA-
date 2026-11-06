@@ -100,6 +100,14 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .nexus-globe { position: absolute; z-index: 2; inset: 112px 0 67px; cursor: grab; }
 .nexus-globe:active { cursor: grabbing; }
 .nexus-globe canvas, .nexus-humanoid canvas { display: block; width: 100%; height: 100%; }
+.scene-canvas-host { position: absolute; inset: 0; }
+.scene-zoom-controls { position: absolute; z-index: 7; right: 25px; bottom: 112px; display: flex; flex-direction: column; gap: 5px; }
+.scene-zoom-controls button { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #3b3828; background: rgba(13,14,13,.82); color: #a99759; cursor: pointer; backdrop-filter: blur(8px); transition: color .2s, border-color .2s, background .2s; }
+.scene-zoom-controls button:hover { color: var(--yellow); border-color: #806d30; background: #211e13; }
+.globe-fallback { position: absolute; z-index: 2; inset: 112px 0 67px; display: grid; place-items: center; }
+.globe-fallback span { position: absolute; width: min(310px, 65%); aspect-ratio: 1; border: 1px dashed var(--yellow); border-radius: 50%; opacity: .5; }
+.globe-fallback span:nth-child(2) { transform: rotateX(65deg); }
+.globe-fallback span:nth-child(3) { transform: rotateY(65deg); }
 .avatar-switch { position: relative; z-index: 5; display: flex; justify-content: flex-end; gap: 5px; margin: -6px 35px 0; }
 .avatar-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 13px; border: 1px solid #36382f; background: rgba(14,15,14,.88); color: #8f9488; cursor: pointer; font-size: 10px; transition: color .2s, border-color .2s, background .2s; }
 .avatar-switch button:hover { color: var(--text); border-color: #68603c; }
@@ -144,8 +152,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .command-result { margin-top: 22px; padding: 14px 15px; border-left: 2px solid var(--yellow); background: #1a1913; }
 .result-topline { display: flex; justify-content: space-between; color: var(--yellow); font: 8px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
 .command-result p { margin: 9px 0 0; color: #c7c8bd; font-size: 11px; line-height: 1.6; }
-.result-unavailable, .result-unsupported, .result-rejected { border-left-color: #b48364; background: #1a1613; }
-.result-unavailable .result-topline, .result-unsupported .result-topline, .result-rejected .result-topline { color: #c69b7c; }
+.command-output { max-height: 190px; margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #353226; background: #0c0d0c; color: #d7ca92; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.result-unavailable, .result-unsupported, .result-rejected, .result-failed { border-left-color: #b48364; background: #1a1613; }
+.result-unavailable .result-topline, .result-unsupported .result-topline, .result-rejected .result-topline, .result-failed .result-topline { color: #c69b7c; }
 
 .workspace-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
 .workspace-panel, .connector-section, .audit-section { border: 1px solid var(--line); background: var(--surface); min-width: 0; }
@@ -167,7 +176,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .approval-card + .approval-card { margin-top: 12px; }
 .approval-meta { display: flex; justify-content: space-between; color: #b29c54; font: 8px ui-monospace, monospace; letter-spacing: .09em; }
 .approval-card > p { margin: 15px 0; color: #e0ded0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.approval-warning { display: flex; align-items: center; gap: 7px; color: #878274; font-size: 10px; }
+.approval-payload { display: block; margin: -4px 0 14px; padding: 10px; border: 1px solid #383522; background: #0d0e0c; color: #d6c77f; font: 10px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.approval-warning { display: flex; align-items: flex-start; gap: 7px; color: #878274; font-size: 10px; line-height: 1.55; }
+.approval-warning svg { flex: 0 0 auto; margin-top: 1px; }
 .approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .approval-actions button { display: inline-flex; align-items: center; gap: 6px; height: 33px; padding: 0 13px; cursor: pointer; font-size: 10px; }
 .reject-button { border: 1px solid #41433e; background: transparent; color: #a9aca3; }
