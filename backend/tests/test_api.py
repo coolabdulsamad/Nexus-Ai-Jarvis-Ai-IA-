@@ -25,8 +25,8 @@ def test_health_and_capabilities(monkeypatch, tmp_path):
 
         capabilities = api.get("/api/capabilities").json()["capabilities"]
         available = {item["id"] for item in capabilities if item["status"] == "available"}
-        assert {"local-time", "notes", "audit", "browser", "terminal"}.issubset(available)
-        assert all(item["status"] == "planned" for item in capabilities if item["id"] == "home")
+        assert {"local-time", "notes", "audit", "browser", "terminal", "devices"}.issubset(available)
+        assert all(item["status"] == "planned" for item in capabilities if item["id"] in {"home", "mobile"})
 
 
 def test_read_only_time_command(monkeypatch, tmp_path):
@@ -283,8 +283,7 @@ def test_console_browser_approval_uses_client_handoff(monkeypatch, tmp_path):
 def test_typed_memory_requires_approval_and_persists(monkeypatch, tmp_path):
     with make_client(monkeypatch, tmp_path) as api:
         command = api.post(
-            "/api/commands",
-            json={"text": "Remember preference: I prefer concise answers"},
+            "/api/commands", json={"text": "Remember preference: I prefer concise answers"},
         ).json()
         assert command["intent"] == "memory.create"
         assert command["status"] == "approval_required"
@@ -306,8 +305,7 @@ def test_typed_memory_requires_approval_and_persists(monkeypatch, tmp_path):
 def test_rejected_typed_memory_creates_no_record(monkeypatch, tmp_path):
     with make_client(monkeypatch, tmp_path) as api:
         command = api.post(
-            "/api/commands",
-            json={"text": "Remember device: Office sensor hub"},
+            "/api/commands", json={"text": "Remember device: Office sensor hub"},
         ).json()
         outcome = api.post(f"/api/approvals/{command['approval']['id']}/reject").json()
         assert outcome["command_status"] == "rejected"
@@ -331,3 +329,73 @@ def test_conversation_timeline_tracks_command_outcomes(monkeypatch, tmp_path):
         listed = api.post("/api/commands", json={"text": "Show memory"}).json()
         assert listed["status"] == "completed"
         assert "No typed memories" in listed["message"]
+
+
+def test_android_registration_requires_approval_and_persists(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post(
+            "/api/commands", json={"text": "Register Android device: Sam's phone"}
+        ).json()
+        assert command["intent"] == "device.register"
+        assert command["status"] == "approval_required"
+        assert command["approval"]["payload"] == {
+            "platform": "android",
+            "name": "Sam's phone",
+        }
+        assert api.get("/api/devices").json()["devices"] == []
+
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        assert outcome["command_status"] == "completed"
+        assert outcome["device"]["connection_status"] == "not_connected"
+        assert "no remote control was enabled" in outcome["message"]
+
+        devices = api.get("/api/devices").json()["devices"]
+        assert len(devices) == 1
+        assert devices[0]["label"] == "Android"
+        assert devices[0]["connection_status"] == "not_connected"
+        assert "No companion app is paired" in devices[0]["limitations"]
+        assert api.get("/api/health").json()["devices"] == 1
+
+    with make_client(monkeypatch, tmp_path) as restarted:
+        devices = restarted.get("/api/devices").json()["devices"]
+        assert devices[0]["name"] == "Sam's phone"
+        assert devices[0]["platform"] == "android"
+
+
+def test_rejected_iphone_registration_creates_no_device(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post(
+            "/api/commands", json={"text": "Register iPhone device: Office iPhone"}
+        ).json()
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/reject").json()
+        assert outcome["command_status"] == "rejected"
+        assert outcome["device"] is None
+        assert "no device was registered or connected" in outcome["message"]
+        assert api.get("/api/devices").json()["devices"] == []
+
+
+def test_device_listing_and_home_status_are_honest(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        empty = api.post("/api/commands", json={"text": "Show devices"}).json()
+        assert empty["status"] == "completed"
+        assert "No owned devices" in empty["message"]
+
+        home = api.post("/api/commands", json={"text": "Home status"}).json()
+        assert home["intent"] == "home.status"
+        assert home["status"] == "unavailable"
+        assert "no home device was contacted or changed" in home["message"]
+        assert api.get("/api/approvals?status=pending").json()["approvals"] == []
+
+
+def test_registration_rejects_unknown_platform_and_oversized_name(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        unknown = api.post("/api/commands", json={"text": "Register Windows device: Laptop"}).json()
+        assert unknown["intent"] == "unknown"
+        assert unknown["status"] == "unsupported"
+
+        oversized = api.post(
+            "/api/commands", json={"text": "Register Android device: " + "x" * 81}
+        ).json()
+        assert oversized["intent"] == "unknown"
+        assert api.get("/api/devices").json()["devices"] == []
+        assert api.get("/api/approvals?status=pending").json()["approvals"] == []
