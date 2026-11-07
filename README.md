@@ -1,6 +1,6 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes and typed memories, a command/response timeline, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, and switchable interactive yellow particle globe and speech-reactive humanoid modes. It does **not** pretend that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile or camera connectors are already active.
+Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, and switchable interactive yellow particle globe and speech-reactive humanoid modes. It does **not** pretend that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile or camera connectors are already active.
 
 ## Quick start on Ubuntu 24.04
 
@@ -30,6 +30,10 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 9. Choose **Approve** on a browser request. Nexus reserves a new tab on the device displaying the console, then opens only the exact approved URL after the backend confirms the decision. Allow pop-ups for Nexus if your browser asks; a blocked tab leaves the approval pending.
 10. Send `Show Git status` — review the fixed `git status --short --branch` action. Approval runs it once in the project root and displays its output. It cannot accept arbitrary shell text or change repository files.
 11. Send `Turn on the AC` — Nexus clearly reports that the home connector is not configured and takes no action.
+12. Open **Devices & home**, choose Android, enter a device name and select **Request registration**. No device appears before approval.
+13. Approve the exact request. The device appears as **Not connected**, with platform capabilities and limitations. This is a local registry entry, not pairing or remote control.
+14. Repeat with iPhone and choose **Reject** — no device is created. Both platforms remain subject to their operating-system restrictions.
+15. Select **Check connector** or **Test AC boundary** under **Home & AC**. Both honestly report that no integration is configured and no home device was contacted or changed.
 
 ## Persistent memory and timeline
 
@@ -38,6 +42,14 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 - **Memory → Timeline** shows recent commands, intents, outcomes and response messages, including pending, completed and rejected requests.
 - `GET /api/memories` supports optional `kind` and bounded `limit` filters. `GET /api/conversations` returns the bounded recent timeline.
 - All records remain in the local SQLite database across service restarts. This phase creates and lists memories; editing, deletion, retention policies and semantic retrieval are separate later work.
+
+## Owned devices and home boundary
+
+- Register an owned device with `Register Android device: My phone` or `Register iPhone device: My iPhone`. The console form creates the same approval-gated command.
+- Registration stores only the approved name, platform, `not_connected` state and timestamp in local SQLite. It does not prove ownership, pair a companion app, unlock a device or enable remote access.
+- `GET /api/devices` lists registered devices with explicit platform capabilities and limitations. `Show devices` is the read-only command equivalent.
+- `Home status` reports the current connector boundary. No Home Assistant, Matter or vendor integration is configured in this slice, so AC state remains unknown and control requests return unavailable.
+- Real companion pairing, remote actions and home control require separately configured authorised connectors and their own approval tests. Android and iPhone are not assumed to offer equivalent control.
 
 ## Browser and scoped terminal actions
 
@@ -69,7 +81,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phase 04 adds its table automatically without deleting existing notes, settings or audit history.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04 and 05 add their tables automatically without deleting existing notes, memories, settings or audit history.
 
 ## Tests and checks
 
@@ -105,16 +117,16 @@ docker build -t nexus-local .
 docker run --rm -p 8000:3000 -v nexus-data:/data nexus-local
 ```
 
-Open **http://localhost:8000**. The named volume preserves notes, typed memories, conversations, settings and audit history.
+Open **http://localhost:8000**. The named volume preserves notes, typed memories, conversations, owned-device records, settings and audit history.
 
 ## Project map
 
 - `backend/` — FastAPI application, command orchestrator, scoped browser/Git connectors, SQLite repository and tests.
-- `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, typed API client and styles.
+- `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, owned-device/home panels, typed API client and styles.
 - `scripts/` — setup, development and verification commands.
 - `docs/` — architecture, security boundaries and delivery roadmap.
 - `Dockerfile` — self-contained production build with persistent `/data` volume.
 
 ## Current boundaries
 
-This phase intentionally contains no arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, hidden recording, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
+This phase intentionally contains no arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, hidden recording, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
