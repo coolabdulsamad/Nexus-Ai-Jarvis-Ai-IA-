@@ -10,6 +10,7 @@ import type {
   Health,
   MemoryRecord,
   Note,
+  OwnedDevice,
 } from '@/types/nexus'
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
@@ -33,6 +34,7 @@ export const nexusApi = {
   memories: async () => (await request<{ memories: MemoryRecord[] }>('/api/memories')).memories,
   conversations: async () =>
     (await request<{ conversations: ConversationEntry[] }>('/api/conversations?limit=50')).conversations,
+  devices: async () => (await request<{ devices: OwnedDevice[] }>('/api/devices')).devices,
   approvals: async (status?: string) =>
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
