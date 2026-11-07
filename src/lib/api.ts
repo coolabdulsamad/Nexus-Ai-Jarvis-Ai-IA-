@@ -5,6 +5,8 @@ import type {
   AssistantSettingsUpdate,
   AuditEvent,
   Capability,
+  CameraEvent,
+  CameraSession,
   CommandResult,
   ConversationEntry,
   Health,
@@ -35,6 +37,13 @@ export const nexusApi = {
   conversations: async () =>
     (await request<{ conversations: ConversationEntry[] }>('/api/conversations?limit=50')).conversations,
   devices: async () => (await request<{ devices: OwnedDevice[] }>('/api/devices')).devices,
+  cameraSessions: async () => (await request<{ sessions: CameraSession[] }>('/api/camera/sessions')).sessions,
+  cameraEvent: async (id: string, event: CameraEvent, keepalive = false) =>
+    (await request<{ session: CameraSession }>(`/api/camera/sessions/${id}/events`, {
+      method: 'POST',
+      body: JSON.stringify({ event }),
+      keepalive,
+    })).session,
   approvals: async (status?: string) =>
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
