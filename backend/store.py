@@ -21,6 +21,10 @@ class ApprovalResolvedError(Exception):
     pass
 
 
+class CameraStateError(Exception):
+    pass
+
+
 DEFAULT_SETTINGS: dict[str, Any] = {
     "assistant_name": "Nexus",
     "voice_enabled": True,
@@ -122,6 +126,14 @@ class Store:
                     platform TEXT NOT NULL CHECK(platform IN ('android', 'iphone')),
                     connection_status TEXT NOT NULL CHECK(connection_status IN ('not_connected')),
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS camera_sessions (
+                    id TEXT PRIMARY KEY,
+                    approval_id TEXT NOT NULL UNIQUE REFERENCES approvals(id),
+                    status TEXT NOT NULL CHECK(status IN ('approved', 'active', 'unavailable', 'stopped')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -244,6 +256,15 @@ class Store:
             f"Approval required before registering this {label} device as not connected.",
         )
 
+    def request_camera_approval(self, command_id: str) -> dict[str, Any]:
+        return self.request_action_approval(
+            command_id,
+            "camera.preview",
+            {"video": True, "audio": False, "recording": False, "storage": "none"},
+            "Permission requested for a video-only browser webcam preview.",
+            "Approval required before requesting camera access. No recording or image storage is included.",
+        )
+
     def get_approval(self, approval_id: str) -> dict[str, Any]:
         with self.connection() as connection:
             row = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
@@ -268,6 +289,7 @@ class Store:
             note = None
             memory = None
             device = None
+            camera_session = None
             output = None
             payload = json.loads(row["payload"])
             if decision == "approved" and row["action"] == "note.create":
@@ -317,6 +339,23 @@ class Store:
                     "It is not connected, and no remote control was enabled."
                 )
                 command_status = "completed"
+            elif decision == "approved" and row["action"] == "camera.preview":
+                camera_session = {
+                    "id": str(uuid.uuid4()),
+                    "approval_id": approval_id,
+                    "status": "approved",
+                    "created_at": resolved_at,
+                    "updated_at": resolved_at,
+                }
+                connection.execute(
+                    "INSERT INTO camera_sessions(id, approval_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (camera_session["id"], approval_id, "approved", resolved_at, resolved_at),
+                )
+                response = (
+                    "Camera preview approved. Your browser still needs camera permission; "
+                    "no video is active yet, and no frames will be recorded or stored."
+                )
+                command_status = "completed"
             elif decision == "approved":
                 action_result = (
                     action_executor(row["action"], payload)
@@ -335,6 +374,8 @@ class Store:
                     response = "Request rejected; nothing was saved."
                 elif row["action"] == "device.register":
                     response = "Request rejected; no device was registered or connected."
+                elif row["action"] == "camera.preview":
+                    response = "Request rejected; camera access was not requested and no preview started."
                 else:
                     response = "Request rejected; no browser or terminal action was taken."
                 command_status = "rejected"
@@ -354,6 +395,7 @@ class Store:
             result["note"] = note
             result["memory"] = memory
             result["device"] = device
+            result["camera_session"] = camera_session
             result["message"] = response
             result["output"] = output
             result["command_status"] = command_status
@@ -431,6 +473,51 @@ class Store:
             for row in rows
         ]
 
+    def list_camera_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT id, approval_id, status, created_at, updated_at FROM camera_sessions ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_camera_event(self, session_id: str, event: str) -> dict[str, Any]:
+        transitions = {
+            "started": ({"approved"}, "active"),
+            "unavailable": ({"approved", "active"}, "unavailable"),
+            "stopped": ({"approved", "active", "unavailable"}, "stopped"),
+        }
+        if event not in transitions:
+            raise ValueError("Unsupported camera event.")
+        allowed, next_status = transitions[event]
+        with self.connection() as connection:
+            row = connection.execute(
+                "SELECT id, approval_id, status, created_at, updated_at FROM camera_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("Camera session not found.")
+            if row["status"] not in allowed:
+                raise CameraStateError(f"Cannot report {event} for a {row['status']} camera session.")
+            updated_at = utc_now()
+            connection.execute(
+                "UPDATE camera_sessions SET status = ?, updated_at = ? WHERE id = ?",
+                (next_status, updated_at, session_id),
+            )
+            details = {
+                "started": "Browser reported an active video-only camera preview.",
+                "unavailable": "Browser camera access was unavailable or denied; no preview is active.",
+                "stopped": "Camera preview stopped and its browser tracks were released.",
+            }
+            self.audit(connection, f"camera.{event}", next_status, details[event], session_id)
+            return {
+                "id": row["id"],
+                "approval_id": row["approval_id"],
+                "status": next_status,
+                "created_at": row["created_at"],
+                "updated_at": updated_at,
+            }
+
     def list_approvals(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         query = "SELECT * FROM approvals"
         parameters: list[Any] = []
@@ -461,6 +548,7 @@ class Store:
             memories = connection.execute("SELECT COUNT(*) FROM memory_records").fetchone()[0]
             conversations = connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0]
             devices = connection.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+            camera_sessions = connection.execute("SELECT COUNT(*) FROM camera_sessions").fetchone()[0]
         return {
             "notes": notes,
             "pending_approvals": pending,
@@ -468,4 +556,5 @@ class Store:
             "memory_records": memories,
             "conversations": conversations,
             "devices": devices,
+            "camera_sessions": camera_sessions,
         }
