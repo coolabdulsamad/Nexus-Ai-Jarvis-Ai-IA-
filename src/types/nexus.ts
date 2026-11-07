@@ -28,6 +28,20 @@ export interface Health {
   audit_events: number
   memory_records: number
   conversations: number
+  devices: number
+}
+
+export type DevicePlatform = 'android' | 'iphone'
+
+export interface OwnedDevice {
+  id: string
+  name: string
+  platform: DevicePlatform
+  label: string
+  connection_status: 'not_connected'
+  capabilities: string[]
+  limitations: string[]
+  created_at: string
 }
 
 export type MemoryKind = 'preference' | 'application' | 'file' | 'device' | 'fact'
@@ -74,6 +88,8 @@ export interface Approval {
     query?: string
     display_command?: string
     working_directory?: string
+    platform?: DevicePlatform
+    name?: string
   }
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
@@ -101,6 +117,7 @@ export interface CommandResult {
 export interface ApprovalResult extends Approval {
   note: Note | null
   memory: MemoryRecord | null
+  device: OwnedDevice | null
   message: string
   output: string | null
   command_status: CommandStatus
