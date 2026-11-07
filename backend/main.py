@@ -113,6 +113,10 @@ def create_app() -> FastAPI:
     def conversations(request: Request, limit: int = Query(default=50, ge=1, le=100)) -> dict:
         return {"conversations": store(request).list_conversations(limit)}
 
+    @app.get("/api/devices", tags=["devices"])
+    def devices(request: Request, limit: int = Query(default=100, ge=1, le=100)) -> dict:
+        return {"devices": store(request).list_devices(limit)}
+
     @app.get("/api/approvals", tags=["approvals"])
     def approvals(
         request: Request,
