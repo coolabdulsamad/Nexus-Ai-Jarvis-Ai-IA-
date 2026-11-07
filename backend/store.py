@@ -28,6 +28,32 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "avatar_mode": "globe",
 }
 
+DEVICE_PLATFORMS: dict[str, dict[str, Any]] = {
+    "android": {
+        "label": "Android",
+        "capabilities": [
+            "Local owned-device registration",
+            "Companion-app capability declarations",
+        ],
+        "limitations": [
+            "No companion app is paired",
+            "No remote control, locking or background access is active",
+        ],
+    },
+    "iphone": {
+        "label": "iPhone",
+        "capabilities": [
+            "Local owned-device registration",
+            "Companion-app capability declarations",
+        ],
+        "limitations": [
+            "No companion app is paired",
+            "iOS background and device-management restrictions still apply",
+            "No remote control or locking is active",
+        ],
+    },
+}
+
 
 class Store:
     """Small SQLite repository. No arbitrary SQL or shell input is accepted."""
@@ -88,6 +114,14 @@ class Store:
                     content TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS devices (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    platform TEXT NOT NULL CHECK(platform IN ('android', 'iphone')),
+                    connection_status TEXT NOT NULL CHECK(connection_status IN ('not_connected')),
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -200,6 +234,16 @@ class Store:
             f"Approval required before saving this {kind} memory.",
         )
 
+    def request_device_approval(self, command_id: str, platform: str, name: str) -> dict[str, Any]:
+        label = DEVICE_PLATFORMS[platform]["label"]
+        return self.request_action_approval(
+            command_id,
+            "device.register",
+            {"platform": platform, "name": name},
+            f"Permission requested to register an owned {label} device locally.",
+            f"Approval required before registering this {label} device as not connected.",
+        )
+
     def get_approval(self, approval_id: str) -> dict[str, Any]:
         with self.connection() as connection:
             row = connection.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
@@ -223,6 +267,7 @@ class Store:
             resolved_at = utc_now()
             note = None
             memory = None
+            device = None
             output = None
             payload = json.loads(row["payload"])
             if decision == "approved" and row["action"] == "note.create":
@@ -251,6 +296,27 @@ class Store:
                 )
                 response = f"{memory['kind'].capitalize()} memory saved locally."
                 command_status = "completed"
+            elif decision == "approved" and row["action"] == "device.register":
+                platform = payload["platform"]
+                if platform not in DEVICE_PLATFORMS:
+                    raise ValueError("Unsupported device platform in stored approval.")
+                device = {
+                    "id": str(uuid.uuid4()),
+                    "name": payload["name"],
+                    "platform": platform,
+                    "connection_status": "not_connected",
+                    "created_at": resolved_at,
+                }
+                connection.execute(
+                    "INSERT INTO devices(id, name, platform, connection_status, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (device["id"], device["name"], platform, "not_connected", resolved_at),
+                )
+                label = DEVICE_PLATFORMS[platform]["label"]
+                response = (
+                    f"{device['name']} was registered as an owned {label} device. "
+                    "It is not connected, and no remote control was enabled."
+                )
+                command_status = "completed"
             elif decision == "approved":
                 action_result = (
                     action_executor(row["action"], payload)
@@ -265,11 +331,12 @@ class Store:
                 command_status = str(action_result["status"])
                 output = action_result.get("output")
             else:
-                response = (
-                    "Request rejected; nothing was saved."
-                    if row["action"] in {"note.create", "memory.create"}
-                    else "Request rejected; no browser or terminal action was taken."
-                )
+                if row["action"] in {"note.create", "memory.create"}:
+                    response = "Request rejected; nothing was saved."
+                elif row["action"] == "device.register":
+                    response = "Request rejected; no device was registered or connected."
+                else:
+                    response = "Request rejected; no browser or terminal action was taken."
                 command_status = "rejected"
 
             connection.execute(
@@ -286,6 +353,7 @@ class Store:
             )
             result["note"] = note
             result["memory"] = memory
+            result["device"] = device
             result["message"] = response
             result["output"] = output
             result["command_status"] = command_status
@@ -347,6 +415,22 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_devices(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connection() as connection:
+            rows = connection.execute(
+                "SELECT id, name, platform, connection_status, created_at FROM devices ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                **dict(row),
+                "label": DEVICE_PLATFORMS[row["platform"]]["label"],
+                "capabilities": DEVICE_PLATFORMS[row["platform"]]["capabilities"],
+                "limitations": DEVICE_PLATFORMS[row["platform"]]["limitations"],
+            }
+            for row in rows
+        ]
+
     def list_approvals(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         query = "SELECT * FROM approvals"
         parameters: list[Any] = []
@@ -376,10 +460,12 @@ class Store:
             events = connection.execute("SELECT COUNT(*) FROM audit_events").fetchone()[0]
             memories = connection.execute("SELECT COUNT(*) FROM memory_records").fetchone()[0]
             conversations = connection.execute("SELECT COUNT(*) FROM commands").fetchone()[0]
+            devices = connection.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
         return {
             "notes": notes,
             "pending_approvals": pending,
             "audit_events": events,
             "memory_records": memories,
             "conversations": conversations,
+            "devices": devices,
         }
