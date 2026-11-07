@@ -1,6 +1,6 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, and switchable interactive yellow particle globe and speech-reactive humanoid modes. It does **not** pretend that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile or camera connectors are already active.
+Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes. It does **not** pretend that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile control, IP/CCTV or ESP32-CAM connectors are already active.
 
 ## Quick start on Ubuntu 24.04
 
@@ -34,6 +34,19 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 13. Approve the exact request. The device appears as **Not connected**, with platform capabilities and limitations. This is a local registry entry, not pairing or remote control.
 14. Repeat with iPhone and choose **Reject** — no device is created. Both platforms remain subject to their operating-system restrictions.
 15. Select **Check connector** or **Test AC boundary** under **Home & AC**. Both honestly report that no integration is configured and no home device was contacted or changed.
+16. Open **Camera & vision** and select **Request camera preview**. The approval card shows video on, microphone off, recording off and no frame storage. No camera request has happened yet.
+17. Choose **Reject** to confirm that no session or camera access is created. Repeat the request and choose **Approve**; Nexus creates an `approved` session, but video is still not active.
+18. Respond to the browser's separate camera prompt. Denial marks the session `unavailable`; allowing it starts the local preview and marks it `active` only after a real video stream is available.
+19. Choose **Stop camera**. Nexus immediately releases every media track, clears the preview and records `stopped`. Leaving or reloading the page also releases the stream and makes a best-effort stopped report.
+20. Send `Camera status` for a read-only summary. Session history contains metadata and timestamps only—never images, video or audio.
+
+## Camera preview and consent boundary
+
+- The browser calls `getUserMedia` with `{ video: { facingMode: 'user' }, audio: false }` only after the exact `camera.preview` approval. Camera access requires a secure browser context such as localhost or HTTPS.
+- Nexus approval and browser permission are deliberately separate. Approval creates an `approved` session; only the browser's successful stream starts the preview and produces an `active` report.
+- Denial or startup failure produces `unavailable`. Stop, an ended browser track and page cleanup release local media tracks; the supported session states are `approved`, `active`, `unavailable` and `stopped`.
+- `GET /api/camera/sessions` lists bounded session metadata. `POST /api/camera/sessions/{id}/events` accepts only `started`, `unavailable` or `stopped`, enforces valid transitions and writes audit events. These are browser-reported lifecycle records, not proof from camera hardware.
+- No camera-frame API, recording, snapshots, uploads, image storage or microphone capture is included. IP/CCTV, ESP32-CAM, camera observations and retention controls remain separate later work.
 
 ## Persistent memory and timeline
 
@@ -81,7 +94,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04 and 05 add their tables automatically without deleting existing notes, memories, settings or audit history.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–06 add their tables automatically without deleting existing notes, memories, devices, settings or audit history.
 
 ## Tests and checks
 
@@ -117,16 +130,16 @@ docker build -t nexus-local .
 docker run --rm -p 8000:3000 -v nexus-data:/data nexus-local
 ```
 
-Open **http://localhost:8000**. The named volume preserves notes, typed memories, conversations, owned-device records, settings and audit history.
+Open **http://localhost:8000**. The named volume preserves notes, typed memories, conversations, owned-device records, camera-session metadata, settings and audit history. Camera access still requires approval and browser permission in each new browser session.
 
 ## Project map
 
 - `backend/` — FastAPI application, command orchestrator, scoped browser/Git connectors, SQLite repository and tests.
-- `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, owned-device/home panels, typed API client and styles.
+- `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
 - `scripts/` — setup, development and verification commands.
 - `docs/` — architecture, security boundaries and delivery roadmap.
 - `Dockerfile` — self-contained production build with persistent `/data` volume.
 
 ## Current boundaries
 
-This phase intentionally contains no arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, hidden recording, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
+This phase intentionally contains no arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
