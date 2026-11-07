@@ -11,6 +11,7 @@ import {
   Database,
   FileClock,
   Globe2,
+  House,
   KeyRound,
   Menu,
   MessageSquareText,
@@ -21,9 +22,11 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Square,
   TerminalSquare,
+  WifiOff,
   UserRound,
   X,
   XCircle,
@@ -43,9 +46,11 @@ import type {
   Capability,
   CommandResult,
   ConversationEntry,
+  DevicePlatform,
   Health,
   MemoryRecord,
   Note,
+  OwnedDevice,
 } from '@/types/nexus'
 
 const quickCommands = [
@@ -54,6 +59,8 @@ const quickCommands = [
   'Take a note: review the camera connector plan',
   'Remember preference: I prefer concise answers',
   'Search Google for local AI safety',
+  'Show devices',
+  'Home status',
   'Show Git status',
 ]
 
@@ -130,6 +137,16 @@ function approvalDetails(approval: Approval) {
       pendingLabel: 'Saving…',
     }
   }
+  if (approval.action === 'device.register') {
+    const platform = approval.payload.platform === 'iphone' ? 'iPhone' : 'Android'
+    return {
+      label: `DEVICE / ${platform.toUpperCase()}`,
+      summary: `Register ${approval.payload.name ?? 'this device'} as an owned ${platform} device`,
+      payload: 'Local record only · initial state: not connected',
+      warning: 'Creates an approved local registry entry. It does not pair the device, bypass platform security or enable remote control.',
+      pendingLabel: 'Registering…',
+    }
+  }
   if (approval.action === 'terminal.git_status') {
     return {
       label: 'TERMINAL / READ ONLY',
@@ -155,6 +172,9 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([])
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [conversations, setConversations] = useState<ConversationEntry[]>([])
+  const [devices, setDevices] = useState<OwnedDevice[]>([])
+  const [deviceName, setDeviceName] = useState('')
+  const [devicePlatform, setDevicePlatform] = useState<DevicePlatform>('android')
   const [memoryView, setMemoryView] = useState<'notes' | 'typed' | 'timeline'>('notes')
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
@@ -189,6 +209,7 @@ export default function Home() {
         nextNotes,
         nextMemories,
         nextConversations,
+        nextDevices,
         nextApprovals,
         nextAudit,
         nextSettings,
@@ -198,6 +219,7 @@ export default function Home() {
         nexusApi.notes(),
         nexusApi.memories(),
         nexusApi.conversations(),
+        nexusApi.devices(),
         nexusApi.approvals('pending'),
         nexusApi.audit(),
         nexusApi.settings(),
@@ -207,6 +229,7 @@ export default function Home() {
       setNotes(nextNotes)
       setMemories(nextMemories)
       setConversations(nextConversations)
+      setDevices(nextDevices)
       setApprovals(nextApprovals)
       setAudit(nextAudit)
       setSettings(nextSettings)
@@ -244,8 +267,12 @@ export default function Home() {
       setCommand('')
       if (nextResult.intent === 'memory.list') setMemoryView('typed')
       if (nextResult.intent === 'conversation.list') setMemoryView('timeline')
+      if (nextResult.intent === 'device.list' || nextResult.intent === 'home.status') {
+        document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
       speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
+      return nextResult
     } catch (commandError) {
       setError(commandError instanceof Error ? commandError.message : 'Command failed safely.')
     } finally {
@@ -256,6 +283,18 @@ export default function Home() {
   const submitCommand = (event?: FormEvent) => {
     event?.preventDefault()
     void executeCommand(command)
+  }
+
+  const registerDevice = async (event: FormEvent) => {
+    event.preventDefault()
+    const name = deviceName.trim()
+    if (!name || busy) return
+    const platformLabel = devicePlatform === 'iphone' ? 'iPhone' : 'Android'
+    const registration = await executeCommand(`Register ${platformLabel} device: ${name}`)
+    if (registration?.status === 'approval_required') {
+      setDeviceName('')
+      document.getElementById('approvals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
   }
 
   const startVoice = () => {
@@ -335,6 +374,9 @@ export default function Home() {
       if (outcome.memory) setMemoryView('typed')
       speak(outcome.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
+      if (outcome.device) {
+        document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
     } catch (decisionError) {
       approvedTab?.close()
       setError(decisionError instanceof Error ? decisionError.message : 'Could not resolve the request.')
@@ -352,6 +394,7 @@ export default function Home() {
     { id: 'console', label: 'Console', icon: TerminalSquare },
     { id: 'notes', label: 'Memory', icon: NotebookPen, count: notes.length + memories.length },
     { id: 'approvals', label: 'Approvals', icon: ShieldCheck, count: approvals.length },
+    { id: 'devices', label: 'Devices & home', icon: Smartphone, count: devices.length },
     { id: 'audit', label: 'Audit trail', icon: FileClock },
     { id: 'connectors', label: 'Connectors', icon: Network },
   ]
@@ -388,7 +431,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.4.0</span>
+          <span className="build-number">LOCAL CORE / 0.5.0</span>
         </div>
       </aside>
 
@@ -401,7 +444,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 04</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 05</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -429,7 +472,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 04</span>
+                <span className="phase-badge">PHASE 05</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -669,6 +712,122 @@ export default function Home() {
                     })}
                   </div>
                 )}
+              </div>
+            </section>
+          </div>
+
+          <div id="devices" className="device-home-grid page-anchor">
+            <section className="workspace-panel device-panel">
+              <SectionHeading
+                eyebrow="OWNED DEVICES"
+                title="Device registry"
+                icon={Smartphone}
+                aside={`${devices.length} REGISTERED`}
+              />
+              <div className="device-registry-body">
+                <form className="device-registration" onSubmit={registerDevice}>
+                  <div className="device-platform-select" role="group" aria-label="Device platform">
+                    <button
+                      type="button"
+                      className={devicePlatform === 'android' ? 'selected' : ''}
+                      aria-pressed={devicePlatform === 'android'}
+                      onClick={() => setDevicePlatform('android')}
+                    >
+                      Android
+                    </button>
+                    <button
+                      type="button"
+                      className={devicePlatform === 'iphone' ? 'selected' : ''}
+                      aria-pressed={devicePlatform === 'iphone'}
+                      onClick={() => setDevicePlatform('iphone')}
+                    >
+                      iPhone
+                    </button>
+                  </div>
+                  <label htmlFor="device-name">Device name</label>
+                  <div className="device-name-row">
+                    <input
+                      id="device-name"
+                      value={deviceName}
+                      onChange={(event) => setDeviceName(event.target.value)}
+                      placeholder="For example, Sam's phone"
+                      maxLength={80}
+                      disabled={busy}
+                    />
+                    <button type="submit" disabled={!deviceName.trim() || busy}>
+                      Request registration
+                    </button>
+                  </div>
+                  <p>Creates a local record only after approval. It does not pair or control the device.</p>
+                </form>
+
+                <div className="registered-devices" aria-live="polite">
+                  {devices.length === 0 ? (
+                    <div className="registry-empty">
+                      <Smartphone size={18} />
+                      <span>No owned devices registered. Android and iPhone are both supported as local registry entries.</span>
+                    </div>
+                  ) : devices.map((device) => (
+                    <article className="device-row" key={device.id}>
+                      <div className="device-row-heading">
+                        <Smartphone size={17} />
+                        <div><strong>{device.name}</strong><span>{device.label}</span></div>
+                        <span className="not-connected"><WifiOff size={12} /> NOT CONNECTED</span>
+                      </div>
+                      <details>
+                        <summary>Platform capabilities and limits</summary>
+                        <div className="device-boundaries">
+                          <div>
+                            <span>AVAILABLE NOW</span>
+                            <ul>{device.capabilities.map((capability) => <li key={capability}>{capability}</li>)}</ul>
+                          </div>
+                          <div>
+                            <span>NOT ACTIVE</span>
+                            <ul>{device.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+                          </div>
+                        </div>
+                      </details>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="platform-declarations">
+                  <div><strong>Android</strong><span>Companion-app integration required. No background control or lock action is active.</span></div>
+                  <div><strong>iPhone</strong><span>Companion-app integration required. iOS platform restrictions remain in force.</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section className="workspace-panel home-panel">
+              <SectionHeading eyebrow="AUTHORISED HOME" title="Home & AC" icon={House} aside="NOT CONFIGURED" />
+              <div className="home-status-body">
+                <div className="home-connection-state">
+                  <WifiOff size={24} />
+                  <div>
+                    <span className="eyebrow">CONNECTOR STATUS</span>
+                    <h3>No home integration connected</h3>
+                  </div>
+                </div>
+                <p className="home-status-copy">
+                  Nexus has not contacted your AC or any other home device. Its current state is unknown; no success or sensor reading is being simulated.
+                </p>
+                <div className="home-requirements">
+                  <span>BEFORE REAL CONTROL</span>
+                  <ul>
+                    <li>Configure a Home Assistant, Matter or vendor-authorised integration.</li>
+                    <li>Select the exact owned device and its supported operations.</li>
+                    <li>Keep a separate approval for every consequential control request.</li>
+                  </ul>
+                </div>
+                <div className="home-check-actions">
+                  <button onClick={() => void executeCommand('Home status')} disabled={busy}>
+                    <House size={15} /> Check connector
+                  </button>
+                  <button onClick={() => void executeCommand('Turn on the AC')} disabled={busy}>
+                    <WifiOff size={15} /> Test AC boundary
+                  </button>
+                </div>
+                <p className="home-action-note">Both checks are safe while unconfigured. The AC test must return unavailable and change nothing.</p>
               </div>
             </section>
           </div>
