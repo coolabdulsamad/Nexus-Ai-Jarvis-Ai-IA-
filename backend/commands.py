@@ -53,6 +53,13 @@ CAPABILITIES = [
         "description": "Run only git status --short --branch after approval. No arbitrary shell input or repository changes.",
     },
     {
+        "id": "devices",
+        "label": "Owned-device registry",
+        "status": "available",
+        "tier": 1,
+        "description": "Register approved Android/iPhone records and inspect platform boundaries. No device is paired or controlled.",
+    },
+    {
         "id": "home",
         "label": "Home & AC connector",
         "status": "planned",
@@ -94,6 +101,20 @@ def _memory_request(text: str) -> tuple[str, str] | None:
     if not match:
         return None
     return match.group(1).lower(), match.group(2).strip()
+
+
+def _device_request(text: str) -> tuple[str, str] | None:
+    match = re.match(
+        r"^(?:please\s+)?register\s+(android|iphone)(?:\s+device)?\s*[:\-]\s+(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    name = match.group(2).strip()
+    if not name or len(name) > 80:
+        return None
+    return match.group(1).lower(), name
 
 
 def _browser_request(text: str) -> tuple[str, dict[str, Any]] | None:
@@ -165,10 +186,13 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
     lowered = normalized.lower().rstrip("?!")
     note_content = _note_content(normalized)
     memory_request = _memory_request(normalized)
+    device_request = _device_request(normalized)
     browser_request = _browser_request(normalized)
 
     if memory_request:
         intent = "memory.create"
+    elif device_request:
+        intent = "device.register"
     elif note_content:
         intent = "note.create"
     elif lowered in {"what time is it", "time", "current time", "what is the time"}:
@@ -181,6 +205,10 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         intent = "memory.list"
     elif lowered in {"show timeline", "conversation history", "show conversation history"}:
         intent = "conversation.list"
+    elif lowered in {"show devices", "list devices", "show owned devices", "device status"}:
+        intent = "device.list"
+    elif lowered in {"home status", "home connector status", "ac connector status"}:
+        intent = "home.status"
     elif lowered in {
         "git status",
         "show git status",
@@ -212,6 +240,19 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             **base,
             "status": "approval_required",
             "message": f"I’m ready to save this {kind} memory. Review the request and approve or reject it.",
+            "approval": approval,
+        }
+
+    if intent == "device.register" and device_request:
+        platform, name = device_request
+        approval = store.request_device_approval(command_id, platform, name)
+        return {
+            **base,
+            "status": "approval_required",
+            "message": (
+                f"I’m ready to register {name} as an owned {platform} device. "
+                "This creates only a local, not-connected record. Review and approve or reject it."
+            ),
             "approval": approval,
         }
 
@@ -292,6 +333,21 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             else f"{len(conversations)} recent command(s) are available in the Memory timeline."
         )
         status = "completed"
+    elif intent == "device.list":
+        devices = store.list_devices(20)
+        message = (
+            "No owned devices are registered. Use “Register Android device: name” or "
+            "“Register iPhone device: name”; registration requires approval and does not pair the device."
+            if not devices
+            else f"{len(devices)} owned device record(s) are available. All remain not connected until a companion connector is configured."
+        )
+        status = "completed"
+    elif intent == "home.status":
+        message = (
+            "No Home Assistant, Matter or vendor-authorised home connector is configured. "
+            "AC control is unavailable, and no home device was contacted or changed."
+        )
+        status = "unavailable"
     elif intent == "browser.unsupported":
         message = (
             "I can open an HTTP/HTTPS site or search Google after approval. "
@@ -310,7 +366,8 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
     else:
         message = (
             "I don’t have a safe, configured skill for that yet. Try time, status, list notes, "
-            "remember preference: your preference, show memory, open a website, search Google, or show Git status."
+            "remember preference: your preference, show memory, register Android device: name, "
+            "show devices, home status, open a website, search Google, or show Git status."
         )
         status = "unsupported"
 
