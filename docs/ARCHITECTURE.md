@@ -6,7 +6,7 @@
 2. Both inputs send the same request to `POST /api/commands`.
 3. The command orchestrator classifies a small, explicit set of intents and constructs typed payloads.
 4. Read-only local status/time/list intents complete immediately. Unknown or unconfigured intents perform no action.
-5. Note creation, typed-memory creation, browser navigation/search and Git status create a pending approval and an audit event, regardless of whether the request was typed or spoken.
+5. Note creation, typed-memory creation, owned-device registration, browser navigation/search and Git status create a pending approval and an audit event, regardless of whether the request was typed or spoken.
 6. The user approves or rejects the exact action payload in the console.
 7. Only approval executes the action in the same SQLite transaction as the decision. Rejection performs no side effect, and a resolved approval cannot be executed again.
 8. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success.
@@ -20,11 +20,11 @@
 - `src/components/NexusHumanoid.tsx`: original particle humanoid with contoured face, separate jaw, neck/torso, blinking, head motion and speech/viseme-driven mouth movement.
 - `src/components/SceneZoomControls.tsx`: shared accessible zoom-in, zoom-out and reset actions; each Three.js scene owns its camera.
 - `src/lib/useVoice.ts`: explicit microphone sessions, browser speech recognition, spoken responses and interruption. No audio is stored by Nexus.
-- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, approval decisions and browser-tab handoff.
+- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, owned-device/home panels, approval decisions and browser-tab handoff.
 - `backend/main.py`: FastAPI routes, validation and production static hosting.
-- `backend/commands.py`: explicit intent routing, typed-memory parsing, URL construction and connector boundaries.
+- `backend/commands.py`: explicit intent routing, typed-memory and owned-device parsing, URL construction and connector boundaries.
 - `backend/connectors.py`: approval-time URL revalidation, client-browser confirmation or local browser fallback, and fixed-argument Git-status execution.
-- `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, typed approvals, settings and audit events.
+- `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, typed approvals, settings and audit events.
 - `data/nexus.db`: local runtime data, excluded from Git.
 
 ## Persistent memory contract
@@ -34,6 +34,14 @@
 The conversation timeline is derived from the existing `commands` table rather than a second, divergent history. It exposes the original input, classified intent, current status, latest response and creation time. Approval resolution updates that command row, so pending, completed and rejected outcomes remain consistent with the audit trail.
 
 This is a structured persistence foundation, not semantic long-term recall. Nexus does not yet infer memories, edit or delete records, embeddings-search content or install adaptive skills.
+
+## Owned-device and home contract
+
+`devices` stores a UUID, user-approved name, constrained platform (`android` or `iphone`), a `not_connected` state and creation timestamp. The only creation path is an approved `device.register` request. Rejection inserts nothing. The read API joins each record to static platform declarations so the UI can distinguish local registry support from unavailable companion-app capabilities.
+
+Registration is not pairing, authentication or proof of ownership. No Android/iOS endpoint can lock, unlock, track or control a device in this slice. Future companion connectors must declare platform-specific operations rather than presenting Android and iPhone as equivalent.
+
+Home status is read-only and reports `unavailable` while no authorised connector exists. AC commands follow the same honest unavailable path and create no approval because there is no connector to execute. A future home connector must add exact device identifiers, supported operations, credential handling outside Git, approval-time revalidation and outcome verification before any real control is enabled.
 
 ## Voice and avatar contract
 
