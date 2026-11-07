@@ -50,9 +50,18 @@ This phase creates and lists memory records. Memory editing/deletion, semantic r
 
 Real Android/iPhone companion pairing and platform-authorised actions remain next. Matter, Home Assistant or vendor-authorised home integrations, including AC where supported, require exact device selection, configured credentials outside Git and separate approval tests. Laptop input/session locking and physical passcode recovery require a separately reviewed operating-system design.
 
-## Phase 06 — cameras, sensors and avatar expansion
+## Phase 06 — consent-based local camera preview (first slice delivered)
 
-Add IP/CCTV and ESP32-CAM capture, laptop-side vision events and retention controls; a separate ESP32 sensor hub; then expand the humanoid into the optional second-monitor avatar experience. Camera and speaker-profile features require visible consent and must not treat voice identity as sufficient authorisation for sensitive actions.
+- Added approval-gated `camera.preview` requests with an exact video-only payload: browser camera video enabled, microphone disabled, recording disabled and frame storage set to none.
+- Added a second, browser-native permission boundary. Backend approval creates an `approved` session but does not access or activate a camera.
+- Added a visible local webcam preview with immediate Stop, pending-request cancellation, browser-track cleanup and page-exit cleanup. The preview becomes active only after a real browser `MediaStream` starts.
+- Added persistent browser-reported `approved`, `active`, `unavailable` and `stopped` sessions, strict lifecycle transitions, read-only camera status and matching audit events.
+- Added a responsive Camera & vision console and session metadata history. No camera frames, snapshots, recordings, audio or uploads are accepted by the API.
+- Expanded automated coverage and verified approval, rejection, browser denial, active preview, immediate stop, page cleanup, persistence and responsive layouts using a simulated browser video track.
+
+### Remaining Phase 06 connector work
+
+Add explicitly configured IP/CCTV and ESP32-CAM connectors, laptop-side vision events and retention-controlled observations; then add a separate ESP32 sensor hub and expand the humanoid into the optional second-monitor avatar experience. These connectors are not active yet. Camera and speaker-profile features require visible consent and must not treat voice identity as sufficient authorisation for sensitive actions.
 
 ## Phase 07 — reviewed adaptive capabilities and expanded automation
 
