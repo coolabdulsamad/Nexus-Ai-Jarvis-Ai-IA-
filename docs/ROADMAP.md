@@ -40,9 +40,15 @@ Exact-target clicking, form submission, arbitrary shell commands, coding automat
 
 This phase creates and lists memory records. Memory editing/deletion, semantic retrieval, retention controls, adaptive skill installation, exact-target browser clicking and broader terminal/coding skills remain separately scoped work.
 
-## Phase 05 — owned devices and home
+## Phase 05 — owned devices and home (foundation delivered)
 
-Add Android and iPhone companion/platform connectors with platform-specific capability declarations. Add Matter, Home Assistant or vendor-authorised home integrations, including AC where supported. Laptop input/session locking and physical passcode recovery require a separately reviewed operating-system design.
+- Added approval-gated local registration for owned Android and iPhone devices, with persistent `not_connected` records and read APIs.
+- Added explicit platform capability declarations and limitations; registration does not pair a device, prove ownership or enable remote control.
+- Added a Devices & home console with Android/iPhone registration, rejection, registry inspection and responsive layouts.
+- Added honest Home & AC connector status and boundary checks. No integration is configured, no state is simulated and no home device is contacted.
+- Verified device persistence across an API restart and expanded backend/browser coverage.
+
+Real Android/iPhone companion pairing and platform-authorised actions remain next. Matter, Home Assistant or vendor-authorised home integrations, including AC where supported, require exact device selection, configured credentials outside Git and separate approval tests. Laptop input/session locking and physical passcode recovery require a separately reviewed operating-system design.
 
 ## Phase 06 — cameras, sensors and avatar expansion
 
