@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
   ArrowUpRight,
   AudioLines,
   BookOpen,
+  Camera,
+  CameraOff,
   Check,
   ChevronRight,
   CircleDot,
@@ -36,6 +38,7 @@ import NexusGlobe from '@/components/NexusGlobe'
 import NexusHumanoid from '@/components/NexusHumanoid'
 import VoiceSettings from '@/components/VoiceSettings'
 import { nexusApi } from '@/lib/api'
+import { requestCameraStream, stopCameraStream } from '@/lib/camera'
 import { eventLabel, formatTimestamp, shortId } from '@/lib/presentation'
 import { useVoice } from '@/lib/useVoice'
 import type {
@@ -43,6 +46,7 @@ import type {
   AssistantSettings,
   AvatarMode,
   AuditEvent,
+  CameraSession,
   Capability,
   CommandResult,
   ConversationEntry,
@@ -61,6 +65,8 @@ const quickCommands = [
   'Search Google for local AI safety',
   'Show devices',
   'Home status',
+  'Start camera preview',
+  'Camera status',
   'Show Git status',
 ]
 
@@ -147,6 +153,15 @@ function approvalDetails(approval: Approval) {
       pendingLabel: 'Registering…',
     }
   }
+  if (approval.action === 'camera.preview') {
+    return {
+      label: 'CAMERA / VIDEO ONLY',
+      summary: 'Start a local webcam preview in this browser',
+      payload: 'Video on · Microphone off · Recording off · Frame storage none',
+      warning: 'Approval does not activate the camera. Your browser will ask for camera permission separately, and Stop will release every video track.',
+      pendingLabel: 'Approving…',
+    }
+  }
   if (approval.action === 'terminal.git_status') {
     return {
       label: 'TERMINAL / READ ONLY',
@@ -173,6 +188,16 @@ export default function Home() {
   const [memories, setMemories] = useState<MemoryRecord[]>([])
   const [conversations, setConversations] = useState<ConversationEntry[]>([])
   const [devices, setDevices] = useState<OwnedDevice[]>([])
+  const [cameraSessions, setCameraSessions] = useState<CameraSession[]>([])
+  const [activeCameraSessionId, setActiveCameraSessionId] = useState<string | null>(null)
+  const [cameraBusy, setCameraBusy] = useState(false)
+  const [previewActive, setPreviewActive] = useState(false)
+  const [cameraNotice, setCameraNotice] = useState('No camera access requested. Your camera is off.')
+  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null)
+  const cameraRequestRef = useRef(0)
+  const activeCameraSessionRef = useRef<string | null>(null)
+  const cameraNeedsStopRef = useRef(false)
   const [deviceName, setDeviceName] = useState('')
   const [devicePlatform, setDevicePlatform] = useState<DevicePlatform>('android')
   const [memoryView, setMemoryView] = useState<'notes' | 'typed' | 'timeline'>('notes')
@@ -210,6 +235,7 @@ export default function Home() {
         nextMemories,
         nextConversations,
         nextDevices,
+        nextCameraSessions,
         nextApprovals,
         nextAudit,
         nextSettings,
@@ -220,6 +246,7 @@ export default function Home() {
         nexusApi.memories(),
         nexusApi.conversations(),
         nexusApi.devices(),
+        nexusApi.cameraSessions(),
         nexusApi.approvals('pending'),
         nexusApi.audit(),
         nexusApi.settings(),
@@ -230,6 +257,7 @@ export default function Home() {
       setMemories(nextMemories)
       setConversations(nextConversations)
       setDevices(nextDevices)
+      setCameraSessions(nextCameraSessions)
       setApprovals(nextApprovals)
       setAudit(nextAudit)
       setSettings(nextSettings)
@@ -246,6 +274,25 @@ export default function Home() {
   }, [refresh])
 
   useEffect(() => {
+    const releaseCamera = () => {
+      cameraRequestRef.current += 1
+      stopCameraStream(cameraStreamRef.current)
+      cameraStreamRef.current = null
+      if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null
+      const sessionId = activeCameraSessionRef.current
+      if (sessionId && cameraNeedsStopRef.current) {
+        cameraNeedsStopRef.current = false
+        void nexusApi.cameraEvent(sessionId, 'stopped', true).catch(() => undefined)
+      }
+    }
+    window.addEventListener('pagehide', releaseCamera)
+    return () => {
+      window.removeEventListener('pagehide', releaseCamera)
+      releaseCamera()
+    }
+  }, [])
+
+  useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSettingsOpen(false)
@@ -255,6 +302,120 @@ export default function Home() {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [])
+
+  const updateCameraSession = (session: CameraSession) => {
+    setCameraSessions((current) => [session, ...current.filter((item) => item.id !== session.id)])
+  }
+
+  const clearLocalCamera = () => {
+    stopCameraStream(cameraStreamRef.current)
+    cameraStreamRef.current = null
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null
+    setPreviewActive(false)
+  }
+
+  const startCameraPreview = async (session: CameraSession) => {
+    if (cameraNeedsStopRef.current) {
+      setCameraNotice('Stop the current preview or pending browser request before starting another one.')
+      return
+    }
+
+    const requestId = cameraRequestRef.current + 1
+    cameraRequestRef.current = requestId
+    activeCameraSessionRef.current = session.id
+    cameraNeedsStopRef.current = true
+    setActiveCameraSessionId(session.id)
+    updateCameraSession(session)
+    setCameraBusy(true)
+    setCameraNotice('Nexus approved the request. Waiting for your browser’s separate camera permission…')
+    document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+
+    try {
+      const stream = await requestCameraStream()
+      if (cameraRequestRef.current !== requestId) {
+        stopCameraStream(stream)
+        return
+      }
+
+      cameraStreamRef.current = stream
+      const handleTrackEnded = () => {
+        if (cameraRequestRef.current !== requestId) return
+        cameraRequestRef.current += 1
+        cameraNeedsStopRef.current = false
+        clearLocalCamera()
+        setCameraBusy(false)
+        setCameraNotice('The browser ended the camera track. The preview is no longer active.')
+        void nexusApi.cameraEvent(session.id, 'stopped')
+          .then((stopped) => {
+            updateCameraSession(stopped)
+            void refresh()
+          })
+          .catch((eventError: unknown) => {
+            setError(eventError instanceof Error ? eventError.message : 'Could not record the ended camera session.')
+          })
+      }
+      stream.getVideoTracks().forEach((track) => track.addEventListener('ended', handleTrackEnded, { once: true }))
+
+      const video = cameraVideoRef.current
+      if (!video) throw new Error('The camera preview element is unavailable.')
+      video.srcObject = stream
+      await video.play()
+      if (cameraRequestRef.current !== requestId) {
+        stopCameraStream(stream)
+        return
+      }
+
+      const started = await nexusApi.cameraEvent(session.id, 'started')
+      if (cameraRequestRef.current !== requestId) {
+        stopCameraStream(stream)
+        return
+      }
+      updateCameraSession(started)
+      setPreviewActive(true)
+      setCameraNotice('Live video-only preview. No microphone, recording, snapshots, uploads or stored frames.')
+      void refresh()
+    } catch (cameraError) {
+      if (cameraRequestRef.current !== requestId) return
+      clearLocalCamera()
+      cameraNeedsStopRef.current = false
+      const errorName = cameraError instanceof Error ? cameraError.name : ''
+      const message = errorName === 'NotAllowedError'
+        ? 'Camera permission was denied or dismissed. No preview is active.'
+        : errorName === 'NotFoundError'
+          ? 'No usable webcam was found. No preview is active.'
+          : cameraError instanceof Error
+            ? `${cameraError.message} No preview is active.`
+            : 'The camera preview could not start. No preview is active.'
+      setCameraNotice(message)
+      try {
+        updateCameraSession(await nexusApi.cameraEvent(session.id, 'unavailable'))
+        void refresh()
+      } catch (eventError) {
+        setError(eventError instanceof Error ? eventError.message : 'The camera stopped, but its session state could not be recorded.')
+      }
+    } finally {
+      if (cameraRequestRef.current === requestId) setCameraBusy(false)
+    }
+  }
+
+  const stopCameraPreview = async () => {
+    const sessionId = activeCameraSessionRef.current
+    const shouldReport = cameraNeedsStopRef.current
+    cameraRequestRef.current += 1
+    cameraNeedsStopRef.current = false
+    clearLocalCamera()
+    setCameraBusy(false)
+    setCameraNotice('Camera preview stopped. Every browser video track was released.')
+
+    if (sessionId && shouldReport) {
+      try {
+        updateCameraSession(await nexusApi.cameraEvent(sessionId, 'stopped'))
+        void refresh()
+      } catch (stopError) {
+        setError(stopError instanceof Error ? stopError.message : 'Camera tracks stopped, but the session update could not be saved.')
+      }
+    }
+  }
 
   const executeCommand = async (text: string) => {
     const normalized = text.trim()
@@ -269,6 +430,12 @@ export default function Home() {
       if (nextResult.intent === 'conversation.list') setMemoryView('timeline')
       if (nextResult.intent === 'device.list' || nextResult.intent === 'home.status') {
         document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      if (nextResult.intent === 'camera.preview' && nextResult.status === 'approval_required') {
+        document.getElementById('approvals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      if (nextResult.intent === 'camera.status') {
+        document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
       speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
       await refresh()
@@ -333,7 +500,14 @@ export default function Home() {
   const decide = async (id: string, decision: 'approve' | 'reject') => {
     const approval = approvals.find((item) => item.id === id)
     const browserAction = approval?.action.startsWith('browser.') ?? false
+    const cameraAction = approval?.action === 'camera.preview'
     let approvedTab: Window | null = null
+
+    if (decision === 'approve' && cameraAction && cameraNeedsStopRef.current) {
+      setCameraNotice('Stop the current camera preview or pending browser request before approving another one.')
+      document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
 
     if (decision === 'approve' && approval && browserAction) {
       approvedTab = window.open('about:blank', '_blank')
@@ -377,6 +551,7 @@ export default function Home() {
       if (outcome.device) {
         document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
+      if (outcome.camera_session) void startCameraPreview(outcome.camera_session)
     } catch (decisionError) {
       approvedTab?.close()
       setError(decisionError instanceof Error ? decisionError.message : 'Could not resolve the request.')
@@ -394,11 +569,14 @@ export default function Home() {
     { id: 'console', label: 'Console', icon: TerminalSquare },
     { id: 'notes', label: 'Memory', icon: NotebookPen, count: notes.length + memories.length },
     { id: 'approvals', label: 'Approvals', icon: ShieldCheck, count: approvals.length },
+    { id: 'camera', label: 'Camera & vision', icon: Camera, count: previewActive ? 1 : 0 },
     { id: 'devices', label: 'Devices & home', icon: Smartphone, count: devices.length },
     { id: 'audit', label: 'Audit trail', icon: FileClock },
     { id: 'connectors', label: 'Connectors', icon: Network },
   ]
 
+  const selectedCameraSession = cameraSessions.find((session) => session.id === activeCameraSessionId) ?? cameraSessions[0]
+  const cameraState = cameraBusy ? 'awaiting permission' : previewActive ? 'active' : selectedCameraSession?.status ?? 'off'
   const online = health?.status === 'online' && !error
 
   return (
@@ -431,7 +609,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.5.0</span>
+          <span className="build-number">LOCAL CORE / 0.6.0</span>
         </div>
       </aside>
 
@@ -444,7 +622,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 05</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 06</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -472,7 +650,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 05</span>
+                <span className="phase-badge">PHASE 06</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -715,6 +893,86 @@ export default function Home() {
               </div>
             </section>
           </div>
+
+          <section id="camera" className="workspace-panel camera-section page-anchor">
+            <SectionHeading
+              eyebrow="CONSENT-BASED VISION"
+              title="Camera & vision"
+              icon={Camera}
+              aside={cameraState.toUpperCase()}
+            />
+            <div className="camera-layout">
+              <div className={`camera-preview-frame ${previewActive ? 'is-active' : ''}`}>
+                <video
+                  ref={cameraVideoRef}
+                  className="camera-video"
+                  autoPlay
+                  muted
+                  playsInline
+                  aria-label="Live local webcam preview"
+                />
+                {!previewActive && (
+                  <div className="camera-preview-placeholder">
+                    {cameraBusy ? <Camera size={32} /> : <CameraOff size={32} />}
+                    <strong>{cameraBusy ? 'Browser permission required' : 'Camera is not showing video'}</strong>
+                    <span>{cameraBusy ? 'Allow or deny the browser prompt. You can also cancel this request.' : 'Approval alone never activates your webcam.'}</span>
+                  </div>
+                )}
+                <div className={`camera-preview-state state-${cameraState.replaceAll(' ', '-')}`}>
+                  <span className="status-dot" />
+                  {cameraBusy ? 'WAITING FOR BROWSER' : previewActive ? 'LIVE · VIDEO ONLY' : cameraState.toUpperCase()}
+                </div>
+              </div>
+
+              <div className="camera-controls">
+                <span className="eyebrow">LOCAL BROWSER PREVIEW</span>
+                <h3>Your camera stays under your control.</h3>
+                <p>
+                  Starting a preview needs a Nexus approval and then your browser’s camera permission. The session becomes active only when a real video stream starts.
+                </p>
+                <div className="camera-notice" role="status" aria-live="polite">{cameraNotice}</div>
+                <div className="camera-action-row">
+                  <button
+                    className="camera-request-button"
+                    onClick={() => void executeCommand('Start camera preview')}
+                    disabled={busy || cameraBusy || previewActive}
+                  >
+                    <Camera size={16} /> Request camera preview
+                  </button>
+                  {(cameraBusy || previewActive) && (
+                    <button className="camera-stop-button" onClick={() => void stopCameraPreview()}>
+                      <Square size={14} /> {cameraBusy ? 'Cancel request' : 'Stop camera'}
+                    </button>
+                  )}
+                </div>
+                <ul className="camera-boundaries">
+                  <li><Check size={13} /> Video only; microphone explicitly disabled</li>
+                  <li><Check size={13} /> No recording, snapshots, uploads or frame API</li>
+                  <li><Check size={13} /> Stop releases every browser media track</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="camera-session-history">
+              <div className="camera-history-heading">
+                <span className="eyebrow">BROWSER-REPORTED SESSIONS</span>
+                <button onClick={() => void executeCommand('Camera status')} disabled={busy}>Check latest status</button>
+              </div>
+              {cameraSessions.length === 0 ? (
+                <div className="camera-history-empty">No camera session exists. Nexus has not accessed a camera.</div>
+              ) : (
+                <div className="camera-session-list">
+                  {cameraSessions.slice(0, 4).map((session) => (
+                    <article className="camera-session-row" key={session.id}>
+                      <span className={`camera-session-status status-${session.status}`}>{session.status}</span>
+                      <code>{shortId(session.id)}</code>
+                      <time>{formatTimestamp(session.updated_at)}</time>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
 
           <div id="devices" className="device-home-grid page-anchor">
             <section className="workspace-panel device-panel">
