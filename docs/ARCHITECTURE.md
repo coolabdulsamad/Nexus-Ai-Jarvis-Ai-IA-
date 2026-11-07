@@ -6,10 +6,10 @@
 2. Both inputs send the same request to `POST /api/commands`.
 3. The command orchestrator classifies a small, explicit set of intents and constructs typed payloads.
 4. Read-only local status/time/list intents complete immediately. Unknown or unconfigured intents perform no action.
-5. Note creation, typed-memory creation, owned-device registration, browser navigation/search and Git status create a pending approval and an audit event, regardless of whether the request was typed or spoken.
+5. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview create a pending approval and an audit event, regardless of whether the request was typed or spoken.
 6. The user approves or rejects the exact action payload in the console.
-7. Only approval executes the action in the same SQLite transaction as the decision. Rejection performs no side effect, and a resolved approval cannot be executed again.
-8. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success.
+7. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. Rejection performs no side effect, and a resolved approval cannot be executed again.
+8. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream.
 9. The original command row is updated with the final response and outcome, making it available to the persistent conversation timeline.
 10. When spoken responses are enabled, the browser speech synthesizer reads the result message. A stop control cancels playback immediately. Terminal output is displayed as text rather than spoken character by character.
 
@@ -20,11 +20,12 @@
 - `src/components/NexusHumanoid.tsx`: original particle humanoid with contoured face, separate jaw, neck/torso, blinking, head motion and speech/viseme-driven mouth movement.
 - `src/components/SceneZoomControls.tsx`: shared accessible zoom-in, zoom-out and reset actions; each Three.js scene owns its camera.
 - `src/lib/useVoice.ts`: explicit microphone sessions, browser speech recognition, spoken responses and interruption. No audio is stored by Nexus.
-- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, owned-device/home panels, approval decisions and browser-tab handoff.
+- `src/lib/camera.ts`: the only browser webcam request helper; it fixes video to the user-facing camera, sets `audio: false` and stops every track on cleanup.
+- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions and browser-tab handoff.
 - `backend/main.py`: FastAPI routes, validation and production static hosting.
 - `backend/commands.py`: explicit intent routing, typed-memory and owned-device parsing, URL construction and connector boundaries.
 - `backend/connectors.py`: approval-time URL revalidation, client-browser confirmation or local browser fallback, and fixed-argument Git-status execution.
-- `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, typed approvals, settings and audit events.
+- `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, camera-session metadata, typed approvals, settings and audit events.
 - `data/nexus.db`: local runtime data, excluded from Git.
 
 ## Persistent memory contract
@@ -42,6 +43,18 @@ This is a structured persistence foundation, not semantic long-term recall. Nexu
 Registration is not pairing, authentication or proof of ownership. No Android/iOS endpoint can lock, unlock, track or control a device in this slice. Future companion connectors must declare platform-specific operations rather than presenting Android and iPhone as equivalent.
 
 Home status is read-only and reports `unavailable` while no authorised connector exists. AC commands follow the same honest unavailable path and create no approval because there is no connector to execute. A future home connector must add exact device identifiers, supported operations, credential handling outside Git, approval-time revalidation and outcome verification before any real control is enabled.
+
+## Local camera contract
+
+`camera_sessions` stores a UUID, the unique originating approval ID, one constrained lifecycle state and creation/update timestamps. It stores no device identifier, image, video, audio, observation or frame payload. Rejection creates no session. Approval inserts `approved`, never `active`.
+
+After approval, the React console calls `navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })`. The browser presents its own permission prompt. The console attaches a successful stream directly to a muted local `<video>` element, waits for playback and then posts `started`; only this path displays the preview as active. Denial or startup failure stops any acquired tracks and reports `unavailable`.
+
+Stop invalidates any pending browser request, stops every track, clears `srcObject` and reports `stopped`. A late stream from a cancelled request is stopped immediately without being attached. Browser-track termination and page/component cleanup also stop local media; page exit uses a best-effort keepalive stopped report. A request-generation counter prevents stale asynchronous results from reactivating a cancelled preview.
+
+`GET /api/camera/sessions` returns bounded metadata history. `POST /api/camera/sessions/{id}/events` accepts only `started`, `unavailable` and `stopped`; allowed transitions are `approved → active`, `approved/active → unavailable`, and `approved/active/unavailable → stopped`. Invalid or repeated transitions return HTTP 409. These records are browser-reported lifecycle state, not independent hardware attestation.
+
+There is no backend webcam connector, frame-upload route, snapshot operation, recording or remote camera access. Future IP/CCTV and ESP32-CAM connectors need separate authentication, exact-source selection, consent, retention and observation-storage designs.
 
 ## Voice and avatar contract
 
@@ -69,8 +82,8 @@ The only terminal intent is `terminal.git_status`. Its executable, argument list
 
 ## Production shape
 
-The Dockerfile builds the frontend and serves it through FastAPI on port 3000. A Docker volume mounted at `/data` preserves the database. Development keeps Vite on port 3000 and proxies `/api` to FastAPI on port 8000. Browser microphone access works on localhost; remote or LAN access would require a separate secure-context and authentication design.
+The Dockerfile builds the frontend and serves it through FastAPI on port 3000. A Docker volume mounted at `/data` preserves the database. Development keeps Vite on port 3000 and proxies `/api` to FastAPI on port 8000. Browser microphone and camera access work on localhost or another secure context; remote or LAN access would require a separate TLS and authentication design.
 
 ## Next connector contract
 
-Every future connector must expose a typed action, risk tier, required parameters and approval policy. Mobile, home and camera connectors must return honest `unavailable` responses until configured. Model output, transcripts, web content and retrieved documentation are data, never permission to execute code or alter policy.
+Every future connector must expose a typed action, risk tier, required parameters and approval policy. Mobile, home, IP/CCTV, ESP32-CAM and sensor connectors must return honest `unavailable` responses until configured. Model output, transcripts, web content, camera frames and retrieved documentation are data, never permission to execute code or alter policy.
