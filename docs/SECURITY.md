@@ -4,7 +4,7 @@
 
 - Nexus binds development services to localhost. Do not enable router port forwarding.
 - The repository excludes `.env`, local databases and personal runtime data.
-- Note creation, typed-memory creation, browser navigation/search and Git status require explicit approval. Rejection performs no action.
+- Note creation, typed-memory creation, owned-device registration, browser navigation/search and Git status require explicit approval. Rejection performs no action.
 - An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path.
 - Audit events record command receipt, approval requests, decisions, settings updates and outcomes.
 - Direct settings changes are reversible local preferences chosen by the user; they do not grant connector privileges or approve commands.
@@ -18,6 +18,15 @@
 - Command inputs and responses are persisted locally to provide the timeline. Do not place passwords, access tokens or other secrets in commands, notes or memories.
 - This phase does not provide semantic retrieval, automatic memory inference, editing, deletion or retention automation. Those features require separate controls and tests.
 - The local database is excluded from Git. Docker deployments should use the provided persistent volume and appropriate host-file permissions.
+
+## Owned devices and home
+
+- Device platforms are constrained to Android and iPhone. Registration names are bounded, and the stored approval payload is checked again before insertion.
+- A registered device is only a local `not_connected` record. Registration does not prove ownership, pair a companion app, create a session or grant remote privileges.
+- Rejection creates no device record. Device records and platform declarations cannot select executables, change policy or trigger actions.
+- No lock, unlock, tracking, microphone, camera or remote-control operation is active on Android or iPhone. Future platform capabilities must use authorised APIs and separate approval policies.
+- No Home Assistant, Matter or vendor credential is requested or stored in this slice. Home/AC status is unavailable rather than simulated, and unconfigured commands contact nothing.
+- Before real home control, store credentials outside Git and model context, scope access to exact owned devices, revalidate the approved action and verify the connector outcome honestly.
 
 ## Browser connector
 
@@ -48,7 +57,7 @@
 ## Risk tiers
 
 - Tier 0: read-only local status, time, note/memory listing, conversation timeline and audit inspection.
-- Tier 1: reversible or tightly scoped local actions, including approved note/memory creation and the fixed Git-status read.
+- Tier 1: reversible or tightly scoped local actions, including approved note/memory creation, not-connected device registration and the fixed Git-status read.
 - Tier 2: external or sensitive actions, including browser navigation, messages, recording and Git push.
 - Tier 3: high-impact actions, including deletion, production deployment and unlocking.
 - Blocked: disabling audit, bypassing consent, stealing secrets or expanding privileges through conversation.
