@@ -29,7 +29,20 @@ export interface Health {
   memory_records: number
   conversations: number
   devices: number
+  camera_sessions: number
 }
+
+export type CameraSessionStatus = 'approved' | 'active' | 'unavailable' | 'stopped'
+
+export interface CameraSession {
+  id: string
+  approval_id: string
+  status: CameraSessionStatus
+  created_at: string
+  updated_at: string
+}
+
+export type CameraEvent = 'started' | 'unavailable' | 'stopped'
 
 export type DevicePlatform = 'android' | 'iphone'
 
@@ -90,6 +103,10 @@ export interface Approval {
     working_directory?: string
     platform?: DevicePlatform
     name?: string
+    video?: boolean
+    audio?: boolean
+    recording?: boolean
+    storage?: 'none'
   }
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
@@ -118,6 +135,7 @@ export interface ApprovalResult extends Approval {
   note: Note | null
   memory: MemoryRecord | null
   device: OwnedDevice | null
+  camera_session: CameraSession | null
   message: string
   output: string | null
   command_status: CommandStatus
