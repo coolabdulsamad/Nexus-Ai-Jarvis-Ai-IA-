@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .commands import CAPABILITIES, handle_command
 from .connectors import execute_approved_action
-from .store import ApprovalResolvedError, NotFoundError, Store, utc_now
+from .store import ApprovalResolvedError, CameraStateError, NotFoundError, Store, utc_now
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "nexus.db"
@@ -27,6 +27,10 @@ class CommandRequest(BaseModel):
 
 class ApprovalDecision(BaseModel):
     client_browser: bool = False
+
+
+class CameraEvent(BaseModel):
+    event: Literal["started", "unavailable", "stopped"]
 
 
 class SettingsUpdate(BaseModel):
@@ -117,6 +121,19 @@ def create_app() -> FastAPI:
     def devices(request: Request, limit: int = Query(default=100, ge=1, le=100)) -> dict:
         return {"devices": store(request).list_devices(limit)}
 
+    @app.get("/api/camera/sessions", tags=["camera"])
+    def camera_sessions(request: Request, limit: int = Query(default=20, ge=1, le=50)) -> dict:
+        return {"sessions": store(request).list_camera_sessions(limit)}
+
+    @app.post("/api/camera/sessions/{session_id}/events", tags=["camera"])
+    def camera_event(session_id: str, payload: CameraEvent, request: Request) -> dict:
+        try:
+            return {"session": store(request).record_camera_event(session_id, payload.event)}
+        except NotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except CameraStateError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
     @app.get("/api/approvals", tags=["approvals"])
     def approvals(
         request: Request,
@@ -161,6 +178,8 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def frontend(full_path: str) -> FileResponse:
+            if full_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="API endpoint not found.")
             candidate = (dist / full_path).resolve()
             if full_path and candidate.is_file() and candidate.is_relative_to(dist.resolve()):
                 return FileResponse(candidate)
