@@ -60,6 +60,13 @@ CAPABILITIES = [
         "description": "Register approved Android/iPhone records and inspect platform boundaries. No device is paired or controlled.",
     },
     {
+        "id": "camera",
+        "label": "Consent-based camera preview",
+        "status": "available",
+        "tier": 2,
+        "description": "Approval-gated local webcam preview with browser permission, video only, visible stop and no frame storage.",
+    },
+    {
         "id": "home",
         "label": "Home & AC connector",
         "status": "planned",
@@ -209,6 +216,10 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         intent = "device.list"
     elif lowered in {"home status", "home connector status", "ac connector status"}:
         intent = "home.status"
+    elif lowered in {"start camera", "start camera preview", "open camera preview", "start webcam", "start webcam preview"}:
+        intent = "camera.preview"
+    elif lowered in {"camera status", "camera preview status", "webcam status"}:
+        intent = "camera.status"
     elif lowered in {
         "git status",
         "show git status",
@@ -252,6 +263,18 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             "message": (
                 f"I’m ready to register {name} as an owned {platform} device. "
                 "This creates only a local, not-connected record. Review and approve or reject it."
+            ),
+            "approval": approval,
+        }
+
+    if intent == "camera.preview":
+        approval = store.request_camera_approval(command_id)
+        return {
+            **base,
+            "status": "approval_required",
+            "message": (
+                "I’m ready to request a video-only webcam preview. Approval does not activate the camera yet; "
+                "your browser will still ask for permission. No audio, recording or image storage is included."
             ),
             "approval": approval,
         }
@@ -348,6 +371,20 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             "AC control is unavailable, and no home device was contacted or changed."
         )
         status = "unavailable"
+    elif intent == "camera.status":
+        sessions = store.list_camera_sessions(1)
+        if not sessions:
+            message = "No camera preview has been approved or started. Nexus has not accessed a camera."
+        else:
+            latest = sessions[0]
+            states = {
+                "approved": "approved, but the browser has not reported an active stream",
+                "active": "reported active by the browser; video only, with no recording or frame storage",
+                "unavailable": "unavailable or denied; no preview is active",
+                "stopped": "stopped; the browser released its camera tracks",
+            }
+            message = f"Latest camera session is {states[latest['status']]}."
+        status = "completed"
     elif intent == "browser.unsupported":
         message = (
             "I can open an HTTP/HTTPS site or search Google after approval. "
@@ -367,7 +404,7 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         message = (
             "I don’t have a safe, configured skill for that yet. Try time, status, list notes, "
             "remember preference: your preference, show memory, register Android device: name, "
-            "show devices, home status, open a website, search Google, or show Git status."
+            "show devices, home status, start camera preview, camera status, open a website, search Google, or show Git status."
         )
         status = "unsupported"
 
