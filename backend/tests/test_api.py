@@ -25,7 +25,7 @@ def test_health_and_capabilities(monkeypatch, tmp_path):
 
         capabilities = api.get("/api/capabilities").json()["capabilities"]
         available = {item["id"] for item in capabilities if item["status"] == "available"}
-        assert {"local-time", "notes", "audit", "browser", "terminal", "devices"}.issubset(available)
+        assert {"local-time", "notes", "audit", "browser", "terminal", "devices", "camera"}.issubset(available)
         assert all(item["status"] == "planned" for item in capabilities if item["id"] in {"home", "mobile"})
 
 
@@ -399,3 +399,94 @@ def test_registration_rejects_unknown_platform_and_oversized_name(monkeypatch, t
         assert oversized["intent"] == "unknown"
         assert api.get("/api/devices").json()["devices"] == []
         assert api.get("/api/approvals?status=pending").json()["approvals"] == []
+
+
+
+def test_camera_preview_requires_approval_and_rejection_starts_nothing(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post("/api/commands", json={"text": "Start camera preview"}).json()
+        assert command["intent"] == "camera.preview"
+        assert command["status"] == "approval_required"
+        assert command["approval"]["payload"] == {
+            "video": True,
+            "audio": False,
+            "recording": False,
+            "storage": "none",
+        }
+        assert api.get("/api/camera/sessions").json()["sessions"] == []
+
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/reject").json()
+        assert outcome["command_status"] == "rejected"
+        assert outcome["camera_session"] is None
+        assert "camera access was not requested" in outcome["message"]
+        assert api.get("/api/camera/sessions").json()["sessions"] == []
+
+
+def test_camera_approval_and_browser_reported_lifecycle_persist(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post("/api/commands", json={"text": "Start webcam"}).json()
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        session = outcome["camera_session"]
+        assert session["status"] == "approved"
+        assert "no video is active yet" in outcome["message"]
+
+        started = api.post(
+            f"/api/camera/sessions/{session['id']}/events", json={"event": "started"}
+        )
+        assert started.status_code == 200
+        assert started.json()["session"]["status"] == "active"
+        assert api.get("/api/health").json()["camera_sessions"] == 1
+
+        stopped = api.post(
+            f"/api/camera/sessions/{session['id']}/events", json={"event": "stopped"}
+        )
+        assert stopped.json()["session"]["status"] == "stopped"
+        events = api.get("/api/audit").json()["events"]
+        assert {"camera.started", "camera.stopped"}.issubset(
+            {event["event_type"] for event in events}
+        )
+
+    with make_client(monkeypatch, tmp_path) as restarted:
+        sessions = restarted.get("/api/camera/sessions").json()["sessions"]
+        assert sessions[0]["status"] == "stopped"
+
+
+def test_camera_denial_is_unavailable_not_active(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        command = api.post("/api/commands", json={"text": "Open camera preview"}).json()
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        session_id = outcome["camera_session"]["id"]
+        denied = api.post(
+            f"/api/camera/sessions/{session_id}/events", json={"event": "unavailable"}
+        )
+        assert denied.status_code == 200
+        assert denied.json()["session"]["status"] == "unavailable"
+
+        status = api.post("/api/commands", json={"text": "Camera status"}).json()
+        assert status["status"] == "completed"
+        assert "unavailable or denied" in status["message"]
+        assert "no preview is active" in status["message"]
+
+
+def test_camera_session_rejects_invalid_transitions_and_unknown_events(monkeypatch, tmp_path):
+    with make_client(monkeypatch, tmp_path) as api:
+        empty_status = api.post("/api/commands", json={"text": "Camera status"}).json()
+        assert "has not accessed a camera" in empty_status["message"]
+
+        command = api.post("/api/commands", json={"text": "Start camera"}).json()
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        session_id = outcome["camera_session"]["id"]
+        assert api.post(
+            f"/api/camera/sessions/{session_id}/events", json={"event": "recorded"}
+        ).status_code == 422
+
+        api.post(f"/api/camera/sessions/{session_id}/events", json={"event": "stopped"})
+        invalid = api.post(
+            f"/api/camera/sessions/{session_id}/events", json={"event": "started"}
+        )
+        assert invalid.status_code == 409
+        assert api.get("/api/camera/sessions/not-real/events").status_code == 404
+        missing = api.post(
+            "/api/camera/sessions/not-real/events", json={"event": "started"}
+        )
+        assert missing.status_code == 404
