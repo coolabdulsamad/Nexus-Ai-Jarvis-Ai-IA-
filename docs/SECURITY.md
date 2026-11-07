@@ -4,11 +4,11 @@
 
 - Nexus binds development services to localhost. Do not enable router port forwarding.
 - The repository excludes `.env`, local databases and personal runtime data.
-- Note creation, typed-memory creation, owned-device registration, browser navigation/search and Git status require explicit approval. Rejection performs no action.
-- An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path.
-- Audit events record command receipt, approval requests, decisions, settings updates and outcomes.
+- Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview require explicit approval. Rejection performs no action.
+- An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path. Camera approval creates session metadata but cannot by itself grant browser camera permission.
+- Audit events record command receipt, approval requests, decisions, settings updates, connector outcomes and browser-reported camera lifecycle changes.
 - Direct settings changes are reversible local preferences chosen by the user; they do not grant connector privileges or approve commands.
-- There is no arbitrary shell endpoint, exact-target browser clicking, adaptive skill installer, camera recording or device-control endpoint.
+- There is no arbitrary shell endpoint, exact-target browser clicking, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
 
 ## Persistent memory and conversation data
 
@@ -27,6 +27,17 @@
 - No lock, unlock, tracking, microphone, camera or remote-control operation is active on Android or iPhone. Future platform capabilities must use authorised APIs and separate approval policies.
 - No Home Assistant, Matter or vendor credential is requested or stored in this slice. Home/AC status is unavailable rather than simulated, and unconfigured commands contact nothing.
 - Before real home control, store credentials outside Git and model context, scope access to exact owned devices, revalidate the approved action and verify the connector outcome honestly.
+
+## Camera and video
+
+- Camera preview requires two separate user actions: approval of the exact Nexus `camera.preview` request and permission in the browser's native camera prompt. Neither is inferred from voice identity, device registration or an earlier session.
+- Before approval there is no `getUserMedia` call and no session record. Approval inserts only an `approved` metadata record; it does not activate or prove access to camera hardware.
+- The browser request is fixed to video with `audio: false`. Nexus does not request microphone access as part of camera preview, and no recording, snapshot, frame-upload, image-storage or observation endpoint exists.
+- The UI reports `active` only after a real browser `MediaStream` is attached and playing. Browser denial or startup failure releases any acquired stream and records `unavailable`; approval alone is never shown as active video.
+- Stop immediately stops every track and clears the video element. Cancelling a pending request invalidates its result, so a late stream is stopped rather than attached. Track termination and page/component cleanup also release media.
+- The event API records only `started`, `unavailable` or `stopped` for an existing session and enforces valid transitions. Session history contains IDs, states and timestamps, not media. Browser reports are audit evidence, not independent hardware proof.
+- The local event API is not an internet-ready camera control plane. Remote access requires authentication, authorisation, CSRF review where applicable, TLS, rate limits and a separate design review.
+- IP/CCTV, ESP32-CAM, retention-controlled observations and remote monitoring are not implemented. Future sources must be explicitly configured, visibly consented and covered by source-specific retention and access policies.
 
 ## Browser connector
 
@@ -56,9 +67,9 @@
 
 ## Risk tiers
 
-- Tier 0: read-only local status, time, note/memory listing, conversation timeline and audit inspection.
+- Tier 0: read-only local status, time, note/memory listing, conversation timeline, camera-session status and audit inspection.
 - Tier 1: reversible or tightly scoped local actions, including approved note/memory creation, not-connected device registration and the fixed Git-status read.
-- Tier 2: external or sensitive actions, including browser navigation, messages, recording and Git push.
+- Tier 2: external or sensitive actions, including browser navigation and local camera preview; future messages, recording and Git push also belong here.
 - Tier 3: high-impact actions, including deletion, production deployment and unlocking.
 - Blocked: disabling audit, bypassing consent, stealing secrets or expanding privileges through conversation.
 
@@ -66,4 +77,4 @@ Android and iPhone connectors must use authorised platform mechanisms and must n
 
 ## Before enabling remote access
 
-Add authentication, CSRF protection where applicable, TLS, per-connector authorisation, rate limits and an explicit remote-access design review. The localhost foundation is not an internet-facing service. Browser microphone capture also requires a secure context such as localhost or HTTPS.
+Add authentication, CSRF protection where applicable, TLS, per-connector authorisation, rate limits and an explicit remote-access design review. The localhost foundation is not an internet-facing service. Browser microphone and camera capture also require a secure context such as localhost or HTTPS.
