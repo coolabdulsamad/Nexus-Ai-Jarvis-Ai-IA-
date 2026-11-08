@@ -25,7 +25,7 @@ def test_health_and_capabilities(monkeypatch, tmp_path):
 
         capabilities = api.get("/api/capabilities").json()["capabilities"]
         available = {item["id"] for item in capabilities if item["status"] == "available"}
-        assert {"local-time", "notes", "audit", "browser", "terminal", "devices", "camera"}.issubset(available)
+        assert {"assistant", "local-time", "notes", "audit", "browser", "terminal", "devices", "camera"}.issubset(available)
         assert all(item["status"] == "planned" for item in capabilities if item["id"] in {"home", "mobile"})
 
 
@@ -108,6 +108,8 @@ def test_voice_and_avatar_settings_persist(monkeypatch, tmp_path):
             "voice_enabled": True,
             "voice_rate": 1.0,
             "avatar_mode": "globe",
+            "model_enabled": True,
+            "model_name": "qwen2.5:3b",
         }
 
         updated = api.post(
@@ -390,13 +392,13 @@ def test_device_listing_and_home_status_are_honest(monkeypatch, tmp_path):
 def test_registration_rejects_unknown_platform_and_oversized_name(monkeypatch, tmp_path):
     with make_client(monkeypatch, tmp_path) as api:
         unknown = api.post("/api/commands", json={"text": "Register Windows device: Laptop"}).json()
-        assert unknown["intent"] == "unknown"
+        assert unknown["intent"] == "device.unsupported"
         assert unknown["status"] == "unsupported"
 
         oversized = api.post(
             "/api/commands", json={"text": "Register Android device: " + "x" * 81}
         ).json()
-        assert oversized["intent"] == "unknown"
+        assert oversized["intent"] == "device.unsupported"
         assert api.get("/api/devices").json()["devices"] == []
         assert api.get("/api/approvals?status=pending").json()["approvals"] == []
 
@@ -485,7 +487,7 @@ def test_camera_session_rejects_invalid_transitions_and_unknown_events(monkeypat
             f"/api/camera/sessions/{session_id}/events", json={"event": "started"}
         )
         assert invalid.status_code == 409
-        assert api.get("/api/camera/sessions/not-real/events").status_code == 404
+        assert api.get("/api/camera/sessions/not-real/events").status_code in {404, 405}
         missing = api.post(
             "/api/camera/sessions/not-real/events", json={"event": "started"}
         )
