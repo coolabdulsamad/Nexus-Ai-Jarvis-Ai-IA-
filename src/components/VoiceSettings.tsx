@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { AudioLines, Check, Globe2, Play, ShieldCheck, Square, UserRound, X } from 'lucide-react'
-import type { AssistantSettings } from '@/types/nexus'
+import { AudioLines, BrainCircuit, Check, Globe2, Play, ShieldCheck, Square, UserRound, X } from 'lucide-react'
+import type { AssistantSettings, ModelStatus } from '@/types/nexus'
 
 interface VoiceSettingsProps {
   settings: AssistantSettings
+  modelStatus: ModelStatus | null
   version: string
   speaking: boolean
   onClose: () => void
@@ -15,6 +16,7 @@ interface VoiceSettingsProps {
 
 export default function VoiceSettings({
   settings,
+  modelStatus,
   version,
   speaking,
   onClose,
@@ -32,10 +34,18 @@ export default function VoiceSettings({
       setError('Enter a name for your assistant.')
       return
     }
+    if (!draft.model_name.trim()) {
+      setError('Enter the Ollama model to use.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
-      await onSave({ ...draft, assistant_name: draft.assistant_name.trim() })
+      await onSave({
+        ...draft,
+        assistant_name: draft.assistant_name.trim(),
+        model_name: draft.model_name.trim(),
+      })
       onClose()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Settings could not be saved.')
@@ -51,9 +61,9 @@ export default function VoiceSettings({
       <section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <button className="modal-close" onClick={onClose} aria-label="Close voice and core settings"><X size={19} /></button>
         <AudioLines size={30} className="settings-symbol" />
-        <span className="eyebrow yellow">VOICE & CORE SETTINGS</span>
+        <span className="eyebrow yellow">ASSISTANT, MODEL & VOICE</span>
         <h2 id="settings-title">Make Nexus yours.</h2>
-        <p>These preferences are stored in your local SQLite database. Microphone access still requires a separate browser prompt.</p>
+        <p>These preferences are stored in your local SQLite database. Model and microphone availability are checked separately.</p>
 
         <form className="settings-form" onSubmit={save}>
           <label htmlFor="assistant-name">Assistant name</label>
@@ -65,6 +75,38 @@ export default function VoiceSettings({
             maxLength={40}
             autoComplete="off"
           />
+
+          <div className="model-settings-block">
+            <div className="model-settings-heading">
+              <BrainCircuit size={17} />
+              <span><strong>Local conversation model</strong><small>Ollama inference · not training or self-modification</small></span>
+            </div>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={draft.model_enabled}
+                onChange={(event) => setDraft({ ...draft, model_enabled: event.target.checked })}
+              />
+              <span><strong>Enable free-form AI conversation</strong><small>Known action requests still use validated commands and approvals.</small></span>
+            </label>
+            <label htmlFor="model-name">Ollama model</label>
+            <input
+              id="model-name"
+              list="installed-ollama-models"
+              value={draft.model_name}
+              onChange={(event) => setDraft({ ...draft, model_name: event.target.value })}
+              maxLength={100}
+              autoComplete="off"
+              disabled={!draft.model_enabled}
+              placeholder="qwen2.5:3b"
+            />
+            <datalist id="installed-ollama-models">
+              {modelStatus?.installed_models.map((model) => <option key={model} value={model} />)}
+            </datalist>
+            <p className={`model-settings-status model-settings-${modelStatus?.state ?? 'unavailable'}`}>
+              {modelStatus?.detail ?? 'Model status has not been checked yet.'}
+            </p>
+          </div>
 
           <fieldset>
             <legend>Visual assistant</legend>
