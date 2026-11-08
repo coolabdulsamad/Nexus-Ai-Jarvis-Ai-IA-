@@ -10,6 +10,16 @@
 - Direct settings changes are reversible local preferences chosen by the user; they do not grant connector privileges or approve commands.
 - There is no arbitrary shell endpoint, exact-target browser clicking, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
 
+## Local model and untrusted output
+
+- Ollama provides inference only. Nexus does not claim model training, fine-tuning, autonomous learning or self-modification.
+- Model availability is reported independently from core availability. Offline, missing, disabled, timed-out and malformed model responses produce no fabricated answer.
+- The model receives the configured assistant name, bounded recent conversation text and explicitly approved typed memories. Do not store passwords, access tokens or secrets in any of them.
+- Conversation history and memory are untrusted reference data, not instructions that can override policy. Model output is also untrusted data.
+- The Ollama client exposes text generation only. It has no tool definitions, connector credentials, shell access or action executor. Model text cannot create/approve requests, execute browser/terminal/device actions, alter settings or change audit policy.
+- The provider URL comes from local environment configuration; model output cannot select a URL. Requests use bounded timeouts, non-streaming responses, generation limits and response-size limits.
+- The default route is a local Ollama service and needs no API key. No cloud provider is connected. Any later cloud route requires explicit configuration, secret storage outside Git/model context and clear disclosure that data leaves the local machine.
+
 ## Persistent memory and conversation data
 
 - Typed-memory kinds are constrained to `preference`, `application`, `file`, `device` and `fact`; arbitrary record types are rejected by the API/schema.

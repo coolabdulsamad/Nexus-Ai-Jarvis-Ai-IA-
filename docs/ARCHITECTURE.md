@@ -1,17 +1,18 @@
-# Nexus foundation architecture
+# Nexus local assistant architecture
 
 ## Request path
 
 1. The React console accepts typed text or a final browser speech-recognition transcript.
 2. Both inputs send the same request to `POST /api/commands`.
-3. The command orchestrator classifies a small, explicit set of intents and constructs typed payloads.
-4. Read-only local status/time/list intents complete immediately. Unknown or unconfigured intents perform no action.
-5. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview create a pending approval and an audit event, regardless of whether the request was typed or spoken.
-6. The user approves or rejects the exact action payload in the console.
-7. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. Rejection performs no side effect, and a resolved approval cannot be executed again.
-8. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream.
-9. The original command row is updated with the final response and outcome, making it available to the persistent conversation timeline.
-10. When spoken responses are enabled, the browser speech synthesizer reads the result message. A stop control cancels playback immediately. Terminal output is displayed as text rather than spoken character by character.
+3. The orchestrator first classifies the explicit action/status intents and constructs typed payloads. Known connector boundaries remain deterministic.
+4. A message outside those intents becomes `assistant.chat`. The Ollama provider checks the configured model, builds a bounded identity/history/approved-memory prompt and calls non-streaming `POST /api/chat`. It returns generated text only; it has no tool or action executor.
+5. Read-only local status/time/list intents complete immediately. If Ollama is offline, disabled or missing the selected model, model chat returns an honest `unavailable`, `model_missing` or disabled response without affecting fixed commands.
+6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview create a pending approval and an audit event, regardless of whether the request was typed or spoken.
+7. The user approves or rejects the exact action payload in the console.
+8. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. Rejection performs no side effect, and a resolved approval cannot be executed again.
+9. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream.
+10. The original command row is updated with the final response and outcome, making it available to the persistent conversation timeline and bounded later model context.
+11. When spoken responses are enabled, the browser speech synthesizer reads the result message. A stop control cancels playback immediately. Terminal output is displayed as text rather than spoken character by character.
 
 ## Components
 
@@ -22,11 +23,22 @@
 - `src/lib/useVoice.ts`: explicit microphone sessions, browser speech recognition, spoken responses and interruption. No audio is stored by Nexus.
 - `src/lib/camera.ts`: the only browser webcam request helper; it fixes video to the user-facing camera, sets `audio: false` and stops every track on cleanup.
 - `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions and browser-tab handoff.
-- `backend/main.py`: FastAPI routes, validation and production static hosting.
-- `backend/commands.py`: explicit intent routing, typed-memory and owned-device parsing, URL construction and connector boundaries.
+- `backend/main.py`: FastAPI routes, validation, model-status endpoint and production static hosting.
+- `backend/ollama.py`: local Ollama model detection, non-streaming inference, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
+- `backend/commands.py`: explicit intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction and connector boundaries.
 - `backend/connectors.py`: approval-time URL revalidation, client-browser confirmation or local browser fallback, and fixed-argument Git-status execution.
 - `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, camera-session metadata, typed approvals, settings and audit events.
 - `data/nexus.db`: local runtime data, excluded from Git.
+
+## Local model contract
+
+`GET /api/assistant/status` checks Ollama separately from the Nexus API. It reports `ready`, `model_missing`, `unavailable` or `disabled`, the selected model and a bounded installed-model list. A healthy FastAPI core therefore does not imply that an AI model is ready.
+
+The default model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, non-streaming responses, generation limits and bounded response text.
+
+The system prompt supplies the configured assistant name and explicit truthfulness/action boundaries. Up to six recent completed exchanges and eight approved memories are included with per-item limits. Memories and history are labelled untrusted data. No embedding retrieval, model training, fine-tuning, weight update or autonomous self-modification occurs.
+
+Model output becomes only the `assistant.chat` response and timeline text. It cannot create an approval, invoke a connector, select a tool, run code or change settings. A user can still request a supported action through the deterministic command path and approve its exact payload separately.
 
 ## Persistent memory contract
 
@@ -34,7 +46,7 @@
 
 The conversation timeline is derived from the existing `commands` table rather than a second, divergent history. It exposes the original input, classified intent, current status, latest response and creation time. Approval resolution updates that command row, so pending, completed and rejected outcomes remain consistent with the audit trail.
 
-This is a structured persistence foundation, not semantic long-term recall. Nexus does not yet infer memories, edit or delete records, embeddings-search content or install adaptive skills.
+This is structured persistence with bounded recent-memory context for local model chat, not semantic long-term recall. Nexus does not yet infer memories, edit or delete records, embeddings-search content or install adaptive skills.
 
 ## Owned-device and home contract
 
@@ -82,7 +94,7 @@ The only terminal intent is `terminal.git_status`. Its executable, argument list
 
 ## Production shape
 
-The Dockerfile builds the frontend and serves it through FastAPI on port 3000. A Docker volume mounted at `/data` preserves the database. Development keeps Vite on port 3000 and proxies `/api` to FastAPI on port 8000. Browser microphone and camera access work on localhost or another secure context; remote or LAN access would require a separate TLS and authentication design.
+The Dockerfile builds the frontend and serves it through FastAPI on port 3000. A Docker volume mounted at `/data` preserves the database. Development keeps Vite on port 3000 and proxies `/api` to FastAPI on port 8000. Ollama is deliberately not bundled into the image; Docker users must explicitly set a reachable `NEXUS_OLLAMA_BASE_URL` for their host/network. Browser microphone and camera access work on localhost or another secure context; remote or LAN access would require a separate TLS and authentication design.
 
 ## Next connector contract
 
