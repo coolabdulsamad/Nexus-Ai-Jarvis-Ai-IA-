@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   AudioLines,
   BookOpen,
+  BrainCircuit,
   Camera,
   CameraOff,
   Check,
@@ -18,7 +19,6 @@ import {
   Menu,
   MessageSquareText,
   Mic,
-  MonitorCog,
   Network,
   NotebookPen,
   Send,
@@ -53,11 +53,14 @@ import type {
   DevicePlatform,
   Health,
   MemoryRecord,
+  ModelStatus,
   Note,
   OwnedDevice,
 } from '@/types/nexus'
 
 const quickCommands = [
+  'Who are you?',
+  'Explain quantum computing in simple terms',
   'What time is it?',
   'System status',
   'Take a note: review the camera connector plan',
@@ -75,6 +78,8 @@ const defaultSettings: AssistantSettings = {
   voice_enabled: true,
   voice_rate: 1,
   avatar_mode: 'globe',
+  model_enabled: true,
+  model_name: 'qwen2.5:3b',
 }
 
 function BrandMark({ small = false }: { small?: boolean }) {
@@ -204,6 +209,7 @@ export default function Home() {
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
   const [settings, setSettings] = useState<AssistantSettings>(defaultSettings)
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null)
   const [command, setCommand] = useState('')
   const [result, setResult] = useState<CommandResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -239,6 +245,7 @@ export default function Home() {
         nextApprovals,
         nextAudit,
         nextSettings,
+        nextModelStatus,
       ] = await Promise.all([
         nexusApi.health(),
         nexusApi.capabilities(),
@@ -250,6 +257,7 @@ export default function Home() {
         nexusApi.approvals('pending'),
         nexusApi.audit(),
         nexusApi.settings(),
+        nexusApi.assistantStatus(),
       ])
       setHealth(nextHealth)
       setCapabilities(nextCapabilities)
@@ -261,6 +269,7 @@ export default function Home() {
       setApprovals(nextApprovals)
       setAudit(nextAudit)
       setSettings(nextSettings)
+      setModelStatus(nextModelStatus)
       setError('')
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'Cannot reach Nexus Local Core.')
@@ -495,6 +504,7 @@ export default function Home() {
     const saved = await nexusApi.updateSettings(nextSettings)
     setSettings(saved)
     if (!saved.voice_enabled) stopSpeaking()
+    void refresh()
   }
 
   const decide = async (id: string, decision: 'approve' | 'reject') => {
@@ -578,6 +588,13 @@ export default function Home() {
   const selectedCameraSession = cameraSessions.find((session) => session.id === activeCameraSessionId) ?? cameraSessions[0]
   const cameraState = cameraBusy ? 'awaiting permission' : previewActive ? 'active' : selectedCameraSession?.status ?? 'off'
   const online = health?.status === 'online' && !error
+  const modelState = modelStatus?.state ?? 'unavailable'
+  const modelStateLabels = {
+    ready: 'AI MODEL READY',
+    model_missing: 'MODEL NOT INSTALLED',
+    unavailable: 'AI MODEL OFFLINE',
+    disabled: 'AI CHAT DISABLED',
+  }
 
   return (
     <div className="app-shell">
@@ -603,13 +620,13 @@ export default function Home() {
         <div className="sidebar-bottom">
           <button className="nav-item" onClick={() => setSettingsOpen(true)}>
             <Settings size={18} strokeWidth={1.6} />
-            <span>Voice & core</span>
+            <span>Assistant & model</span>
           </button>
           <div className="local-only-note">
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.6.0</span>
+          <span className="build-number">LOCAL CORE / 0.7.0</span>
         </div>
       </aside>
 
@@ -622,7 +639,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 06</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 07</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -650,7 +667,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 06</span>
+                <span className="phase-badge">PHASE 07</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -682,20 +699,29 @@ export default function Home() {
               <div className="core-principles">
                 <span><Database size={14} /> SQLite memory</span>
                 <span><ShieldCheck size={14} /> Explicit consent</span>
-                <span><MonitorCog size={14} /> Local core</span>
+                <span><BrainCircuit size={14} /> Ollama inference</span>
               </div>
             </div>
 
             <div className="command-panel">
               <div className="command-panel-heading">
-                <span className="eyebrow">COMMAND INTERFACE</span>
-                <span className="secure-label"><KeyRound size={12} /> PERMISSION GATED</span>
+                <span className="eyebrow">AI CONVERSATION + ACTIONS</span>
+                <span className="secure-label"><KeyRound size={12} /> ACTIONS PERMISSION GATED</span>
               </div>
-              <h2>What are we doing next?</h2>
-              <p className="command-intro">Start with a local request. {settings.assistant_name} will explain anything that needs your approval before it happens.</p>
+              <h2>Talk to {settings.assistant_name}.</h2>
+              <p className="command-intro">Ask a question, have a conversation, or request a supported action. Model replies are generated by your configured local Ollama model.</p>
+
+              <button className={`model-status model-status-${modelState}`} onClick={() => setSettingsOpen(true)}>
+                <BrainCircuit size={19} />
+                <span className="model-status-copy">
+                  <strong>{modelStateLabels[modelState]}</strong>
+                  <small>{modelStatus?.detail ?? 'Checking the local Ollama service…'}</small>
+                </span>
+                <span className="model-status-name">{modelStatus?.model ?? settings.model_name}</span>
+              </button>
 
               <form onSubmit={submitCommand} className="command-form">
-                <label htmlFor="command-input">Your instruction</label>
+                <label htmlFor="command-input">Message or action request</label>
                 <div className="command-input-wrap">
                   <MessageSquareText size={19} />
                   <textarea
@@ -713,7 +739,7 @@ export default function Home() {
                   <span className="input-hint">⌘ / CTRL + ENTER</span>
                 </div>
                 <button className="send-button" type="submit" disabled={!command.trim() || busy}>
-                  <span>{busy ? 'Processing safely' : `Send to ${settings.assistant_name}`}</span>
+                  <span>{busy ? 'Thinking / validating safely' : `Send to ${settings.assistant_name}`}</span>
                   {busy ? <Activity size={18} className="spin" /> : <Send size={18} />}
                 </button>
               </form>
@@ -729,7 +755,7 @@ export default function Home() {
                   {listening ? 'Stop listening' : `Speak to ${settings.assistant_name}`}
                 </button>
                 <button className="voice-settings-button" onClick={() => setSettingsOpen(true)}>
-                  <AudioLines size={16} /> Voice settings
+                  <AudioLines size={16} /> Assistant settings
                 </button>
                 {speaking && (
                   <button className="stop-speaking" onClick={stopSpeaking}>
@@ -743,12 +769,12 @@ export default function Home() {
                   : speaking
                     ? `${settings.assistant_name} is speaking. Use Stop speaking to interrupt.`
                     : recognitionSupported
-                      ? 'Microphone stays off until you choose Speak. Voice commands use the same approval path.'
+                      ? 'Microphone stays off until you choose Speak. Voice conversations use Ollama; actions keep the same approval path.'
                       : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
               </div>
 
               <div className="quick-commands">
-                <span className="eyebrow">TRY A WORKING COMMAND</span>
+                <span className="eyebrow">TRY CONVERSATION OR A WORKING ACTION</span>
                 <div className="quick-command-list">
                   {quickCommands.map((suggestion) => (
                     <button key={suggestion} onClick={() => setCommand(suggestion)} disabled={busy}>
@@ -764,6 +790,13 @@ export default function Home() {
                     <span>{result.status.replaceAll('_', ' ')}</span>
                     <span>{shortId(result.command_id)}</span>
                   </div>
+                  {result.intent === 'assistant.chat' && (
+                    <div className="result-source">
+                      {result.provider === 'ollama'
+                        ? `OLLAMA INFERENCE · ${result.model} · ${result.memory_count ?? 0} APPROVED MEMORIES IN CONTEXT`
+                        : 'NO MODEL RESPONSE · NO ACTION EXECUTED'}
+                    </div>
+                  )}
                   <p>{result.message}</p>
                   {result.output && <pre className="command-output">{result.output}</pre>}
                 </div>
@@ -1131,6 +1164,7 @@ export default function Home() {
       {settingsOpen && (
         <VoiceSettings
           settings={settings}
+          modelStatus={modelStatus}
           version={health?.version ?? 'Unavailable'}
           speaking={speaking}
           onClose={() => setSettingsOpen(false)}
