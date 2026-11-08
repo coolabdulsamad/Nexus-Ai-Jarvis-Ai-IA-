@@ -63,6 +63,24 @@ Real Android/iPhone companion pairing and platform-authorised actions remain nex
 
 Add explicitly configured IP/CCTV and ESP32-CAM connectors, laptop-side vision events and retention-controlled observations; then add a separate ESP32 sensor hub and expand the humanoid into the optional second-monitor avatar experience. These connectors are not active yet. Camera and speaker-profile features require visible consent and must not treat voice identity as sufficient authorisation for sensitive actions.
 
-## Phase 07 — reviewed adaptive capabilities and expanded automation
+## Phase 07 — real local-model intelligence (delivered)
 
-Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → human review → signed/versioned release → monitoring and rollback. Raw pages, documents, transcripts and model output remain untrusted data. Browser exact-target clicking, scoped coding automation, Git operations and deployment each require their own permission boundaries and tests before activation.
+- Added genuine free-form conversation through Ollama's native model-list and non-streaming chat APIs rather than fixed responses alone.
+- Added independent `ready`, `model_missing`, `unavailable` and `disabled` model states, configurable persisted model selection, bounded timeouts and honest setup/failure messages.
+- Added a model system identity using the configured assistant name, up to six recent exchanges and up to eight explicitly approved typed memories as bounded, untrusted context.
+- Preserved deterministic action parsing and existing approvals. The model receives no tools or executor, and generated text cannot execute actions or change policy.
+- Added model-health and provider labels to the console, model/voice settings, typed/voice conversation through the same path, and mocked provider/safety/regression tests.
+
+This is local inference, not model training, fine-tuning, embedding retrieval or autonomous self-improvement. No physical Ollama installation or response is claimed until the user installs a model and verifies it on the laptop. No cloud provider is connected.
+
+## Phase 08 — consented wake word and local voice hardening (next)
+
+Add an opt-in, visibly active wake-word path using a separately selected local engine, with microphone lifecycle controls and text fallback. Evaluate fully local STT/TTS, interruption and speaker-profile convenience without treating voice identity as authorisation. Browser speech recognition remains potentially network-dependent until replaced.
+
+## Phase 09 — genuine device and home connectors
+
+Implement platform-authorised Android/iPhone companion pairing and explicitly scoped actions, followed by one configured home connector with exact device selection and verified outcomes. Add IP/CCTV, ESP32-CAM and ESP32 sensor connectors separately with consent, authentication, retention and audit controls. Registration records must not be presented as real connections.
+
+## Phase 10 — reviewed adaptive capabilities and expanded automation
+
+Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → human review → signing/versioning → monitoring and rollback. Raw pages, documents, transcripts and model output remain untrusted data. Browser exact-target clicking, scoped coding automation, Git operations and deployment each require their own permission boundaries and tests before activation. Fine-tuning, if deliberately added later, is a separate reviewed dataset/training/evaluation workflow—not a side effect of chat.

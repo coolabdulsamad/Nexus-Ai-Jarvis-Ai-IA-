@@ -1,10 +1,12 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant foundation. It provides a real command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes. It does **not** pretend that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile control, IP/CCTV or ESP32-CAM connectors are already active.
+Nexus is a local-first personal AI assistant with **real free-form conversation through a configured local Ollama model**, plus a separate validated command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes.
+
+Ollama supplies model **inference**, not automatic training or self-modification. Nexus does **not** pretend that a model is available when Ollama is offline, that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile control, IP/CCTV or ESP32-CAM connectors are already active.
 
 ## Quick start on Ubuntu 24.04
 
-Prerequisites: Python 3.12+, Node.js 22+, npm and Git. If Python virtual environments are unavailable, install `python3.12-venv` with your system package manager.
+Prerequisites: Python 3.12+, Node.js 22+, npm, Git and—**for real AI conversation**—Ollama. If Python virtual environments are unavailable, install `python3.12-venv` with your system package manager.
 
 ```bash
 git clone https://github.com/coolabdulsamad/Nexus-Ai-Jarvis-Ai-IA-.git
@@ -15,7 +17,46 @@ bash scripts/dev.sh
 
 Open **http://localhost:3000**. The API is at **http://127.0.0.1:8000**, with interactive documentation at **http://127.0.0.1:8000/docs**. Stop both services with `Ctrl+C`.
 
-The setup script creates `.venv`, installs Python and npm dependencies, and prepares `data/`. Nexus creates `data/nexus.db` automatically. No account, cloud database, API key or router port forwarding is required.
+The setup script creates `.venv`, installs Python and npm dependencies, and prepares `data/`. Nexus creates `data/nexus.db` automatically. No account, cloud database, API key or router port forwarding is required for local inference.
+
+## Connect the real local AI brain
+
+Nexus now calls Ollama's native `GET /api/tags` and `POST /api/chat` APIs. Fixed commands continue to work without a model, but open-ended conversation honestly reports `unavailable` until Ollama and the selected model are ready.
+
+On Ubuntu/Linux, install Ollama and pull the default model:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:3b
+```
+
+For macOS or Windows, install Ollama from **https://ollama.com/download**, open it, then run the same `ollama pull qwen2.5:3b` command. On Linux, if the service is not already running, use:
+
+```bash
+ollama serve
+```
+
+Keep that service running and start Nexus in another terminal with `bash scripts/dev.sh`. The console's model card must say **AI MODEL READY** before free-form chat is available. The first response can take longer while the model loads.
+
+Try:
+
+```text
+Who are you?
+Explain quantum computing in simple terms.
+What can you help me plan today?
+```
+
+The model receives the assistant name saved in **Assistant & model**, up to six recent conversation exchanges and up to eight explicitly approved typed memories. These inputs are bounded and marked as untrusted reference data. This is conversational context, not semantic memory search or training. Select another installed model or disable free-form chat in **Assistant & model**; the setting persists locally.
+
+Optional environment configuration belongs in `.env` (never commit it):
+
+```bash
+NEXUS_OLLAMA_BASE_URL=http://127.0.0.1:11434
+NEXUS_OLLAMA_STATUS_TIMEOUT=3
+NEXUS_OLLAMA_TIMEOUT=120
+```
+
+No cloud model provider is connected in this phase. A future cloud route must be explicitly configured and must not be described as local or private.
 
 ## Try the complete permission flow
 
@@ -76,7 +117,7 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 ## Voice and humanoid mode
 
 1. Use **Globe / Humanoid** above the visual assistant to switch modes. The choice is saved locally. Drag either model to rotate it; scroll/pinch or use the dedicated buttons to zoom, and use the reset button to restore the camera.
-2. Open **Voice & core** to change the assistant name, enable spoken responses, adjust speech rate and preview the voice.
+2. Open **Assistant & model** to change the assistant name, select the Ollama model, enable spoken responses, adjust speech rate and preview the voice.
 3. Choose **Speak to Nexus** and allow the browser's microphone prompt. Speak one command; its final transcript enters the same command path as typed text.
 4. Choose **Stop listening** to cancel capture or **Stop speaking** to interrupt a reply. The humanoid mouth animates during speech.
 
@@ -94,7 +135,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–06 add their tables automatically without deleting existing notes, memories, devices, settings or audit history.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–07 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 07 adds no model weights to Git; Ollama manages model downloads separately.
 
 ## Tests and checks
 
@@ -102,7 +143,17 @@ Your local `data/nexus.db` is excluded from Git and remains on your machine. Pha
 bash scripts/test.sh
 ```
 
-This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build.
+This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build. Ollama tests use a mocked provider, so the suite does not need to download a model or expose a real service.
+
+For an optional physical Ollama smoke test after installation:
+
+```bash
+ollama list
+curl http://127.0.0.1:11434/api/tags
+curl http://127.0.0.1:8000/api/assistant/status
+```
+
+The last command must report `"state":"ready"`; then ask `Who are you?` in the Nexus console and confirm the result is labelled `OLLAMA INFERENCE`.
 
 ## Windows 11 development
 
@@ -134,7 +185,7 @@ Open **http://localhost:8000**. The named volume preserves notes, typed memories
 
 ## Project map
 
-- `backend/` — FastAPI application, command orchestrator, scoped browser/Git connectors, SQLite repository and tests.
+- `backend/` — FastAPI application, Ollama inference client, command/model orchestrator, scoped browser/Git connectors, SQLite repository and tests.
 - `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
 - `scripts/` — setup, development and verification commands.
 - `docs/` — architecture, security boundaries and delivery roadmap.
@@ -142,4 +193,4 @@ Open **http://localhost:8000**. The named volume preserves notes, typed memories
 
 ## Current boundaries
 
-This phase intentionally contains no arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
+This phase intentionally contains no model training/fine-tuning, autonomous self-modification, always-on wake-word engine, arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
