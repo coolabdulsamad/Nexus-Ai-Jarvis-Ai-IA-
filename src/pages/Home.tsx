@@ -13,6 +13,7 @@ import {
   CircleDot,
   Database,
   FileClock,
+  FolderSearch,
   Globe2,
   House,
   KeyRound,
@@ -36,6 +37,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import NexusGlobe from '@/components/NexusGlobe'
 import NexusHumanoid from '@/components/NexusHumanoid'
+import SystemControl from '@/components/SystemControl'
 import VoiceSettings from '@/components/VoiceSettings'
 import { nexusApi } from '@/lib/api'
 import { requestCameraStream, stopCameraStream } from '@/lib/camera'
@@ -66,6 +68,8 @@ const quickCommands = [
   'Take a note: review the camera connector plan',
   'Remember preference: I prefer concise answers',
   'Search Google for local AI safety',
+  'Open VS Code',
+  'Open folder Documents in VS Code',
   'Show devices',
   'Home status',
   'Start camera preview',
@@ -80,6 +84,7 @@ const defaultSettings: AssistantSettings = {
   avatar_mode: 'globe',
   model_enabled: true,
   model_name: 'qwen2.5:3b',
+  wake_word: 'Nexus',
 }
 
 function BrandMark({ small = false }: { small?: boolean }) {
@@ -167,6 +172,26 @@ function approvalDetails(approval: Approval) {
       pendingLabel: 'Approving…',
     }
   }
+  if (approval.action === 'system.open_application') {
+    const application = approval.payload.application === 'files' ? 'File manager' : 'VS Code'
+    return {
+      label: 'SYSTEM / OPEN APPLICATION',
+      summary: `Open ${application}`,
+      payload: 'Fixed application catalog · no arbitrary executable or arguments',
+      warning: `Requests one local launch of ${application}. No folder, terminal command or other application is authorised.`,
+      pendingLabel: 'Opening…',
+    }
+  }
+  if (approval.action === 'system.open_folder') {
+    const application = approval.payload.application === 'files' ? 'File manager' : 'VS Code'
+    return {
+      label: 'SYSTEM / OPEN FOLDER',
+      summary: `Open ${approval.payload.name ?? 'approved folder'} with ${application}`,
+      payload: approval.payload.path ?? '',
+      warning: `Revalidates this exact directory within the configured roots, then opens it once with ${application}. File contents are not read.`,
+      pendingLabel: 'Opening…',
+    }
+  }
   if (approval.action === 'terminal.git_status') {
     return {
       label: 'TERMINAL / READ ONLY',
@@ -213,6 +238,7 @@ export default function Home() {
   const [command, setCommand] = useState('')
   const [result, setResult] = useState<CommandResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState('')
@@ -222,12 +248,19 @@ export default function Home() {
   const {
     recognitionSupported,
     listening,
+    wakeActive,
+    wakeEnabled,
+    wakeHeard,
     speaking,
     transcript,
     viseme,
     voiceError,
     startListening,
     stopListening,
+    startWakeWord,
+    stopWakeWord,
+    suspendWakeWord,
+    resumeWakeWord,
     speak,
     stopSpeaking,
   } = useVoice()
@@ -428,7 +461,9 @@ export default function Home() {
 
   const executeCommand = async (text: string) => {
     const normalized = text.trim()
-    if (!normalized || busy) return
+    if (!normalized || busyRef.current) return
+    busyRef.current = true
+    suspendWakeWord()
     setBusy(true)
     setError('')
     try {
@@ -447,12 +482,14 @@ export default function Home() {
         document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
       speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
-      await refresh()
+      void refresh()
       return nextResult
     } catch (commandError) {
       setError(commandError instanceof Error ? commandError.message : 'Command failed safely.')
     } finally {
+      busyRef.current = false
       setBusy(false)
+      resumeWakeWord()
     }
   }
 
@@ -484,6 +521,17 @@ export default function Home() {
     })
   }
 
+  const toggleWakeWord = () => {
+    if (wakeEnabled) {
+      stopWakeWord()
+      return
+    }
+    startWakeWord(settings.wake_word, (text) => {
+      setCommand(text)
+      void executeCommand(text)
+    })
+  }
+
   const changeAvatar = async (avatarMode: AvatarMode) => {
     if (settingsBusy || avatarMode === settings.avatar_mode) return
     const previous = settings
@@ -504,6 +552,7 @@ export default function Home() {
     const saved = await nexusApi.updateSettings(nextSettings)
     setSettings(saved)
     if (!saved.voice_enabled) stopSpeaking()
+    if (saved.wake_word !== settings.wake_word) stopWakeWord()
     void refresh()
   }
 
@@ -557,7 +606,7 @@ export default function Home() {
       })
       if (outcome.memory) setMemoryView('typed')
       speak(outcome.message, settings.voice_enabled, settings.voice_rate)
-      await refresh()
+      void refresh()
       if (outcome.device) {
         document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
@@ -577,6 +626,7 @@ export default function Home() {
 
   const navItems: { id: string; label: string; icon: LucideIcon; count?: number }[] = [
     { id: 'console', label: 'Console', icon: TerminalSquare },
+    { id: 'system', label: 'System control', icon: FolderSearch },
     { id: 'notes', label: 'Memory', icon: NotebookPen, count: notes.length + memories.length },
     { id: 'approvals', label: 'Approvals', icon: ShieldCheck, count: approvals.length },
     { id: 'camera', label: 'Camera & vision', icon: Camera, count: previewActive ? 1 : 0 },
@@ -626,7 +676,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.7.0</span>
+          <span className="build-number">LOCAL CORE / 0.8.0</span>
         </div>
       </aside>
 
@@ -639,7 +689,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 07</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 08</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -667,7 +717,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 07</span>
+                <span className="phase-badge">PHASE 08</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -688,12 +738,12 @@ export default function Home() {
                 </button>
               </div>
               {settings.avatar_mode === 'globe' ? (
-                <NexusGlobe active={busy || listening || speaking} />
+                <NexusGlobe active={busy || listening || wakeHeard || speaking} />
               ) : (
-                <NexusHumanoid active={busy} listening={listening} speaking={speaking} viseme={viseme} />
+                <NexusHumanoid active={busy} listening={listening || wakeHeard} speaking={speaking} viseme={viseme} />
               )}
               <div className="globe-caption">
-                <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : 'AWAITING YOUR COMMAND'}</span>
+                <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : wakeHeard ? 'WAKE WORD HEARD' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : wakeActive ? `WAITING FOR “${settings.wake_word.toUpperCase()}”` : 'AWAITING YOUR COMMAND'}</span>
                 <span>DRAG · SCROLL · PINCH TO EXPLORE</span>
               </div>
               <div className="core-principles">
@@ -754,6 +804,15 @@ export default function Home() {
                   {listening ? <Square size={15} /> : <Mic size={16} />}
                   {listening ? 'Stop listening' : `Speak to ${settings.assistant_name}`}
                 </button>
+                <button
+                  className={`wake-word-button ${wakeEnabled ? 'is-wake-active' : ''}`}
+                  onClick={toggleWakeWord}
+                  disabled={!recognitionSupported || (busy && !wakeEnabled)}
+                  aria-pressed={wakeEnabled}
+                >
+                  {wakeEnabled ? <Square size={14} /> : <AudioLines size={15} />}
+                  {wakeEnabled ? 'Stop wake word' : `Enable “${settings.wake_word}”`}
+                </button>
                 <button className="voice-settings-button" onClick={() => setSettingsOpen(true)}>
                   <AudioLines size={16} /> Assistant settings
                 </button>
@@ -767,10 +826,16 @@ export default function Home() {
                 {voiceError || (listening
                   ? transcript || 'Listening… speak now. Nothing is sent until speech is recognized.'
                   : speaking
-                    ? `${settings.assistant_name} is speaking. Use Stop speaking to interrupt.`
-                    : recognitionSupported
-                      ? 'Microphone stays off until you choose Speak. Voice conversations use Ollama; actions keep the same approval path.'
-                      : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
+                    ? `${settings.assistant_name} is speaking. Wake-word capture is paused; use Stop speaking to interrupt.`
+                    : wakeHeard
+                      ? transcript || 'Wake word heard. Say one command within eight seconds.'
+                      : wakeActive
+                        ? transcript || `Listening for “${settings.wake_word}”. Say the name alone, then a command, or say both together.`
+                        : wakeEnabled
+                          ? 'Wake-word session is paused while your command is processed and will resume automatically.'
+                          : recognitionSupported
+                            ? 'Microphone stays off until you choose Speak or Enable wake word. Browser speech recognition is not speaker identification and may use a vendor speech service.'
+                            : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
               </div>
 
               <div className="quick-commands">
@@ -798,11 +863,22 @@ export default function Home() {
                     </div>
                   )}
                   <p>{result.message}</p>
+                  {Boolean(result.directories?.length) && (
+                    <div className="result-directory-choices">
+                      {result.directories?.map((directory) => (
+                        <button key={directory.path} onClick={() => void executeCommand(`Open folder ${directory.path} in VS Code`)} disabled={busy}>
+                          <FolderSearch size={14} /><span><strong>{directory.name}</strong><small>{directory.path}</small></span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {result.output && <pre className="command-output">{result.output}</pre>}
                 </div>
               )}
             </div>
           </section>
+
+          <SystemControl busy={busy} onCommand={(text) => void executeCommand(text)} />
 
           <div className="workspace-grid">
             <section id="notes" className="workspace-panel page-anchor">
