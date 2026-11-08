@@ -18,6 +18,7 @@ from .commands import CAPABILITIES, handle_command
 from .connectors import execute_approved_action
 from .ollama import OllamaAssistant
 from .store import ApprovalResolvedError, CameraStateError, NotFoundError, Store, utc_now
+from .system import discover_directories, system_status
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "nexus.db"
@@ -42,6 +43,7 @@ class SettingsUpdate(BaseModel):
     avatar_mode: Literal["globe", "humanoid"] | None = None
     model_enabled: bool | None = None
     model_name: str | None = Field(default=None, min_length=1, max_length=100)
+    wake_word: str | None = Field(default=None, min_length=2, max_length=40)
 
 
 def create_app() -> FastAPI:
@@ -116,7 +118,23 @@ def create_app() -> FastAPI:
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", model_name):
                 raise HTTPException(status_code=422, detail="Enter a valid Ollama model name, such as qwen2.5:3b.")
             updates["model_name"] = model_name
+        if "wake_word" in updates:
+            wake_word = updates["wake_word"].strip()
+            if len(wake_word) < 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9' -]{0,39}", wake_word):
+                raise HTTPException(status_code=422, detail="Use a wake word with 2–40 letters, numbers, spaces, apostrophes or hyphens.")
+            updates["wake_word"] = wake_word
         return store(request).update_settings(updates)
+
+    @app.get("/api/system/status", tags=["system"])
+    def local_system_status() -> dict:
+        return system_status()
+
+    @app.get("/api/system/directories", tags=["system"])
+    def local_directories(
+        query: str = Query(default="", max_length=100),
+        limit: int = Query(default=20, ge=1, le=30),
+    ) -> dict:
+        return discover_directories(query, limit)
 
     @app.get("/api/notes", tags=["memory"])
     def notes(request: Request, limit: int = Query(default=100, ge=1, le=100)) -> dict:

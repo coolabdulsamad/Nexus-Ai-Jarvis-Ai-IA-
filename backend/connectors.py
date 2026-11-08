@@ -143,6 +143,14 @@ def execute_approved_action(
         return open_browser(payload, client_browser=client_browser)
     if action == "terminal.git_status":
         return git_status(payload)
+    if action == "system.open_application":
+        from .system import launch_application
+
+        return launch_application(payload)
+    if action == "system.open_folder":
+        from .system import open_folder
+
+        return open_folder(payload)
     return {
         "status": "failed",
         "message": "This approval action is not recognized. Nothing was executed.",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -48,6 +49,7 @@ class OllamaAssistant:
         self.base_url = _validated_base_url(base_url or os.getenv("NEXUS_OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
         self.status_timeout = status_timeout or _bounded_timeout("NEXUS_OLLAMA_STATUS_TIMEOUT", 3.0, 10.0)
         self.chat_timeout = chat_timeout or _bounded_timeout("NEXUS_OLLAMA_TIMEOUT", 120.0, 300.0)
+        self._status_cache: tuple[float, str, bool, dict[str, Any]] | None = None
 
     def _request(self, path: str, payload: dict[str, Any] | None = None, timeout: float = 3.0) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -79,31 +81,42 @@ class OllamaAssistant:
             raise OllamaError("Ollama returned an unexpected response.")
         return data
 
-    def status(self, store: Store) -> dict[str, Any]:
+    def status(self, store: Store, use_cache: bool = False) -> dict[str, Any]:
         settings = store.get_settings()
         model = settings["model_name"]
+        enabled = settings["model_enabled"]
+        now = time.monotonic()
+        if use_cache and self._status_cache:
+            cached_at, cached_model, cached_enabled, cached = self._status_cache
+            ttl = 20.0 if cached["state"] == "ready" else 3.0
+            if cached_model == model and cached_enabled == enabled and now - cached_at < ttl:
+                return {**cached, "installed_models": list(cached["installed_models"])}
         result: dict[str, Any] = {
             "provider": "ollama",
             "state": "unavailable",
             "model": model,
-            "enabled": settings["model_enabled"],
+            "enabled": enabled,
             "installed_models": [],
             "mode": "inference",
             "detail": "",
         }
-        if not settings["model_enabled"]:
+        def finish() -> dict[str, Any]:
+            self._status_cache = (now, model, enabled, result)
+            return {**result, "installed_models": list(result["installed_models"])}
+
+        if not enabled:
             result.update(state="disabled", detail="Local model conversation is disabled in assistant settings.")
-            return result
+            return finish()
         try:
             data = self._request("/api/tags", timeout=self.status_timeout)
         except OllamaError as error:
             result["detail"] = str(error)
-            return result
+            return finish()
 
         raw_models = data.get("models", [])
         if not isinstance(raw_models, list):
             result["detail"] = "Ollama returned an invalid model list."
-            return result
+            return finish()
         models = sorted(
             {
                 item.get("model") or item.get("name")
@@ -119,7 +132,7 @@ class OllamaAssistant:
                 state="model_missing",
                 detail=f"Ollama is running, but {model} is not installed. Pull it or select an installed model.",
             )
-        return result
+        return finish()
 
     def respond(self, store: Store, text: str, current_command_id: str) -> dict[str, Any]:
         settings = store.get_settings()
@@ -133,7 +146,7 @@ class OllamaAssistant:
                 "message": "Free-form model conversation is disabled. Enable it in Assistant settings or use a supported local command.",
             }
 
-        availability = self.status(store)
+        availability = self.status(store, use_cache=True)
         if availability["state"] != "ready":
             return {
                 **base,
@@ -145,15 +158,15 @@ class OllamaAssistant:
                 ),
             }
 
-        memories = store.list_memories(limit=8)
+        memories = store.list_memories(limit=6)
         history = [
             entry
-            for entry in store.list_conversations(limit=30)
+            for entry in store.list_conversations(limit=24)
             if entry["id"] != current_command_id
             and entry["response"]
             and entry["status"] != "processing"
             and not (entry["intent"] == "assistant.chat" and entry["status"] != "completed")
-        ][:6]
+        ][:4]
         memory_block = "\n".join(
             f"- [{memory['kind']}] {memory['content'][:500]}" for memory in memories
         ) or "- No approved typed memories are stored."
@@ -161,6 +174,7 @@ class OllamaAssistant:
         system = f"""You are {settings['assistant_name']}, an AI personal assistant inside the Nexus application.
 Your assistant name is {settings['assistant_name']!r}. Answer identity questions with that name and never claim to be human.
 You are running as a local language model through Ollama. Be concise, useful and technically honest. Say when you do not know something.
+Default to 2–4 sentences for ordinary questions; provide more detail only when the user requests it or the task genuinely requires it.
 This conversation provides inference, not model training, fine-tuning or autonomous self-modification.
 You may discuss, explain, write and help plan. You cannot execute device, camera, browser, terminal, file or deployment actions in this response.
 Nexus's separate validated command and approval system owns all actions. Never claim that an action occurred and never invent an approval.
@@ -182,7 +196,8 @@ Approved local memories:
                     "model": model,
                     "messages": messages,
                     "stream": False,
-                    "options": {"temperature": 0.4, "num_predict": 450, "num_ctx": 4096},
+                    "keep_alive": "10m",
+                    "options": {"temperature": 0.4, "num_predict": 260, "num_ctx": 3072},
                 },
                 timeout=self.chat_timeout,
             )
