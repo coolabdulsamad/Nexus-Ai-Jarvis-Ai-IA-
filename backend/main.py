@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .commands import CAPABILITIES, handle_command
 from .connectors import execute_approved_action
+from .ollama import OllamaAssistant
 from .store import ApprovalResolvedError, CameraStateError, NotFoundError, Store, utc_now
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -38,12 +40,15 @@ class SettingsUpdate(BaseModel):
     voice_enabled: bool | None = None
     voice_rate: float | None = Field(default=None, ge=0.7, le=1.4)
     avatar_mode: Literal["globe", "humanoid"] | None = None
+    model_enabled: bool | None = None
+    model_name: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.store = Store(os.getenv("NEXUS_DB_PATH", DEFAULT_DB_PATH))
+        app.state.assistant = OllamaAssistant()
         yield
 
     app = FastAPI(
@@ -68,6 +73,9 @@ def create_app() -> FastAPI:
     def store(request: Request) -> Store:
         return request.app.state.store
 
+    def assistant(request: Request) -> OllamaAssistant:
+        return request.app.state.assistant
+
     @app.get("/api/health", tags=["system"])
     def health(request: Request) -> dict:
         return {
@@ -85,7 +93,11 @@ def create_app() -> FastAPI:
 
     @app.post("/api/commands", status_code=200, tags=["commands"])
     def command(payload: CommandRequest, request: Request) -> dict:
-        return handle_command(payload.text, store(request))
+        return handle_command(payload.text, store(request), assistant(request))
+
+    @app.get("/api/assistant/status", tags=["assistant"])
+    def assistant_status(request: Request) -> dict:
+        return assistant(request).status(store(request))
 
     @app.get("/api/settings", tags=["system"])
     def settings(request: Request) -> dict:
@@ -99,6 +111,11 @@ def create_app() -> FastAPI:
             if not name:
                 raise HTTPException(status_code=422, detail="Assistant name cannot be blank.")
             updates["assistant_name"] = name
+        if "model_name" in updates:
+            model_name = updates["model_name"].strip()
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", model_name):
+                raise HTTPException(status_code=422, detail="Enter a valid Ollama model name, such as qwen2.5:3b.")
+            updates["model_name"] = model_name
         return store(request).update_settings(updates)
 
     @app.get("/api/notes", tags=["memory"])
