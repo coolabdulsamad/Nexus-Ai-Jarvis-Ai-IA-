@@ -15,6 +15,7 @@ export interface AssistantSettings {
   avatar_mode: AvatarMode
   model_enabled: boolean
   model_name: string
+  wake_word: string
 }
 
 export type AssistantSettingsUpdate = Partial<AssistantSettings>
@@ -29,6 +30,47 @@ export interface ModelStatus {
   installed_models: string[]
   mode: 'inference'
   detail: string
+}
+
+export interface DirectoryEntry {
+  name: string
+  path: string
+  parent: string
+  depth?: number
+}
+
+export interface LocalApplication {
+  id: 'vscode' | 'files'
+  label: string
+  description: string
+  installed: boolean
+}
+
+export interface SystemStatus {
+  roots: string[]
+  discovery: {
+    max_depth: number
+    max_scanned: number
+    hidden_directories: boolean
+    symlinks_followed: boolean
+    file_contents_read: boolean
+  }
+  applications: LocalApplication[]
+  screen_awareness: {
+    state: 'not_configured'
+    capture_active: false
+    monitors_visible: 0
+    clicking_enabled: false
+    detail: string
+  }
+}
+
+export interface DirectorySearch {
+  directories: DirectoryEntry[]
+  roots: string[]
+  scanned: number
+  truncated: boolean
+  max_depth: number
 }
 
 export interface Health {
@@ -121,6 +163,8 @@ export interface Approval {
     audio?: boolean
     recording?: boolean
     storage?: 'none'
+    path?: string
+    application?: 'vscode' | 'files'
   }
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
@@ -146,6 +190,7 @@ export interface CommandResult {
   provider?: 'ollama' | 'none'
   model?: string
   memory_count?: number
+  directories?: DirectoryEntry[]
 }
 
 export interface ApprovalResult extends Approval {

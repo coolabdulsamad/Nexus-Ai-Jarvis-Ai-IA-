@@ -38,6 +38,10 @@ export default function VoiceSettings({
       setError('Enter the Ollama model to use.')
       return
     }
+    if (draft.wake_word.trim().length < 2) {
+      setError('Enter a wake word with at least two characters.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -45,6 +49,7 @@ export default function VoiceSettings({
         ...draft,
         assistant_name: draft.assistant_name.trim(),
         model_name: draft.model_name.trim(),
+        wake_word: draft.wake_word.trim(),
       })
       onClose()
     } catch (saveError) {
@@ -75,6 +80,18 @@ export default function VoiceSettings({
             maxLength={40}
             autoComplete="off"
           />
+
+          <div className="wake-word-settings">
+            <label htmlFor="wake-word">Wake word</label>
+            <input
+              id="wake-word"
+              value={draft.wake_word}
+              onChange={(event) => setDraft({ ...draft, wake_word: event.target.value })}
+              maxLength={40}
+              autoComplete="off"
+            />
+            <p>Enable it from the main console when you want a listening session. Activation is never restored automatically after reload.</p>
+          </div>
 
           <div className="model-settings-block">
             <div className="model-settings-heading">
@@ -172,7 +189,7 @@ export default function VoiceSettings({
           <div><dt>Database</dt><dd>data/nexus.db</dd></div>
           <div><dt>Version</dt><dd>{version}</dd></div>
         </dl>
-        <div className="settings-safety"><ShieldCheck size={18} /><span>Voice identity is not authorisation. Sensitive actions still require explicit approval.</span></div>
+        <div className="settings-safety"><ShieldCheck size={18} /><span>Speech recognition is not speaker identification. Browser speech services may process audio off-device. Sensitive actions still require explicit approval.</span></div>
       </section>
     </div>
   )

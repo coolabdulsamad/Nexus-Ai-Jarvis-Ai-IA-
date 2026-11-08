@@ -9,11 +9,13 @@ import type {
   CameraSession,
   CommandResult,
   ConversationEntry,
+  DirectorySearch,
   Health,
   MemoryRecord,
   ModelStatus,
   Note,
   OwnedDevice,
+  SystemStatus,
 } from '@/types/nexus'
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
@@ -49,6 +51,9 @@ export const nexusApi = {
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
   assistantStatus: () => request<ModelStatus>('/api/assistant/status'),
+  systemStatus: () => request<SystemStatus>('/api/system/status'),
+  directories: (query = '') =>
+    request<DirectorySearch>(`/api/system/directories?limit=20&query=${encodeURIComponent(query)}`),
   settings: () => request<AssistantSettings>('/api/settings'),
   updateSettings: (settings: AssistantSettingsUpdate) =>
     request<AssistantSettings>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
