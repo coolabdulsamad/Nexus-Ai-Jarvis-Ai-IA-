@@ -2,14 +2,24 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
 from .connectors import validated_browser_url
 from .store import Store
 
+if TYPE_CHECKING:
+    from .ollama import OllamaAssistant
+
 
 CAPABILITIES = [
+    {
+        "id": "assistant",
+        "label": "Local model conversation",
+        "status": "available",
+        "tier": 0,
+        "description": "Free-form conversation through configured Ollama inference, with assistant identity, bounded history and approved memories. No training or autonomous actions.",
+    },
     {
         "id": "local-time",
         "label": "Time & system status",
@@ -188,7 +198,7 @@ def _approval_command(
     return {**base, "status": "approval_required", "message": message, "approval": approval}
 
 
-def handle_command(text: str, store: Store) -> dict[str, Any]:
+def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = None) -> dict[str, Any]:
     normalized = " ".join(text.strip().split())
     lowered = normalized.lower().rstrip("?!")
     note_content = _note_content(normalized)
@@ -232,17 +242,26 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
         intent = "terminal.git_status"
     elif browser_request:
         intent = browser_request[0]
+    elif lowered.startswith("register "):
+        intent = "device.unsupported"
     elif any(term in lowered for term in ("chrome", "browser", "website", "search google", "click")):
         intent = "browser.unsupported"
     elif any(term in lowered for term in ("terminal", "shell", "command prompt", "run command")):
         intent = "terminal.unsupported"
+    elif re.match(r"^(?:please\s+)?(?:open|launch|visit|go\s+to|navigate\s+to)\b", lowered):
+        intent = "browser.unsupported"
     elif any(term in lowered for term in ("air conditioner", "air conditioning", " ac", "ac ", "home device", "thermostat")):
         intent = "home.unavailable"
     else:
-        intent = "unknown"
+        intent = "assistant.chat" if assistant else "unknown"
 
     command_id = store.create_command(normalized, intent)
     base: dict[str, Any] = {"command_id": command_id, "intent": intent}
+
+    if intent == "assistant.chat" and assistant:
+        reply = assistant.respond(store, normalized, command_id)
+        store.finish_command(command_id, reply["status"], reply["message"])
+        return {**base, **reply}
 
     if intent == "memory.create" and memory_request:
         kind, content = memory_request
@@ -385,6 +404,9 @@ def handle_command(text: str, store: Store) -> dict[str, Any]:
             }
             message = f"Latest camera session is {states[latest['status']]}."
         status = "completed"
+    elif intent == "device.unsupported":
+        message = "Only Android and iPhone device records are supported. No device was registered or connected."
+        status = "unsupported"
     elif intent == "browser.unsupported":
         message = (
             "I can open an HTTP/HTTPS site or search Google after approval. "
