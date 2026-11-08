@@ -23,5 +23,13 @@ echo "[4/4] Preparing local storage"
 mkdir -p data
 
 echo ""
+if command -v ollama >/dev/null; then
+  echo "Ollama found. Install the default conversation model with:"
+  echo "  ollama pull qwen2.5:3b"
+else
+  echo "Ollama is not installed. Fixed commands will work, but real AI conversation requires Ollama."
+  echo "Install it from https://ollama.com/download, then run: ollama pull qwen2.5:3b"
+fi
+echo ""
 echo "Nexus is ready. Run: bash scripts/dev.sh"
 echo "Then open: http://localhost:3000"
