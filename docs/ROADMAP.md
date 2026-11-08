@@ -15,7 +15,7 @@
 - Switchable globe and original humanoid face with blinking, head movement and speech-driven mouth shapes.
 - Voice commands use the existing validation, approval and audit path.
 
-This is the browser voice slice, not a claim of fully offline speech. Wake-word detection and locally hosted speech-to-text/text-to-speech models remain voice-hardening work. Browser recognition availability and network behaviour depend on the browser and operating system.
+This is the browser voice slice, not a claim of fully offline speech. Persistent background/offline wake-word detection and locally hosted speech-to-text/text-to-speech models remain voice-hardening work. Browser recognition availability and network behaviour depend on the browser and operating system.
 
 ## Phase 03 — visual world and scoped connectors (delivered)
 
@@ -73,9 +73,18 @@ Add explicitly configured IP/CCTV and ESP32-CAM connectors, laptop-side vision e
 
 This is local inference, not model training, fine-tuning, embedding retrieval or autonomous self-improvement. No physical Ollama installation or response is claimed until the user installs a model and verifies it on the laptop. No cloud provider is connected.
 
-## Phase 08 — consented wake word and local voice hardening (next)
+## Phase 08 — responsiveness, opt-in wake word and local system control (delivered)
 
-Add an opt-in, visibly active wake-word path using a separately selected local engine, with microphone lifecycle controls and text fallback. Evaluate fully local STT/TTS, interruption and speaker-profile convenience without treating voice identity as authorisation. Browser speech recognition remains potentially network-dependent until replaced.
+- Reduced common chat-path waiting with a short-lived Ollama readiness cache, ten-minute model keep-alive, bounded generation defaults, four recent exchanges and six approved memories. Ordinary answers now default to two to four sentences, and dashboard refreshes no longer block display of the command result.
+- Added an explicitly enabled browser wake-word session with visible state, Stop control, direct wake-plus-command handling and an eight-second one-command follow-up window after wake alone. Capture pauses during processing and speech, and activation is never restored after reload.
+- Added bounded real directory discovery under the home directory or explicitly configured roots, with hidden-directory and symlink exclusions, result/depth/scan limits and no file-content reads.
+- Added approval-gated VS Code and platform file-manager launches using a fixed application catalog, exact resolved paths, connector-defined arguments, `shell=False` and approval-time revalidation. Ambiguous or missing folders create no launch approval.
+- Added a responsive System Control console for real directory search, exact-path actions, installation state, configured roots and honest inactive screen status.
+- Preserved deterministic routing, single-use approvals and audit history for typed and spoken commands. Expanded parser, connector, provider-cache, API and browser verification.
+
+This phase does not provide speaker identification, persistent background/offline wake listening, streaming inference, screen capture, multi-monitor understanding, activity inference or clicking. Mobile pairing/tracking/control, home/AC connectivity, autonomous web learning, model training/fine-tuning and self-modification also remain unavailable. Browser speech recognition recognises words rather than voices and may use a vendor network service.
+
+Future screen work must add visible capture consent, exact monitor/window scope, honest visual results, target confirmation and separate audited approval for each input action. Speaker profiles may become a convenience feature only; they must never become sole authorisation for sensitive actions.
 
 ## Phase 09 — genuine device and home connectors
 
