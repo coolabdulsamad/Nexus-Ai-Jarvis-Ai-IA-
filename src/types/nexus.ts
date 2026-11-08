@@ -13,9 +13,23 @@ export interface AssistantSettings {
   voice_enabled: boolean
   voice_rate: number
   avatar_mode: AvatarMode
+  model_enabled: boolean
+  model_name: string
 }
 
 export type AssistantSettingsUpdate = Partial<AssistantSettings>
+
+export type ModelState = 'ready' | 'model_missing' | 'unavailable' | 'disabled'
+
+export interface ModelStatus {
+  provider: 'ollama'
+  state: ModelState
+  model: string
+  enabled: boolean
+  installed_models: string[]
+  mode: 'inference'
+  detail: string
+}
 
 export interface Health {
   status: 'online'
@@ -129,6 +143,9 @@ export interface CommandResult {
   message: string
   output?: string | null
   approval?: Approval
+  provider?: 'ollama' | 'none'
+  model?: string
+  memory_count?: number
 }
 
 export interface ApprovalResult extends Approval {

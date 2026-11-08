@@ -11,6 +11,7 @@ import type {
   ConversationEntry,
   Health,
   MemoryRecord,
+  ModelStatus,
   Note,
   OwnedDevice,
 } from '@/types/nexus'
@@ -47,6 +48,7 @@ export const nexusApi = {
   approvals: async (status?: string) =>
     (await request<{ approvals: Approval[] }>(`/api/approvals${status ? `?status=${status}` : ''}`)).approvals,
   audit: async () => (await request<{ events: AuditEvent[] }>('/api/audit?limit=60')).events,
+  assistantStatus: () => request<ModelStatus>('/api/assistant/status'),
   settings: () => request<AssistantSettings>('/api/settings'),
   updateSettings: (settings: AssistantSettingsUpdate) =>
     request<AssistantSettings>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
