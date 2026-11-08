@@ -2,12 +2,12 @@
 
 ## Request path
 
-1. The React console accepts typed text or a final browser speech-recognition transcript.
-2. Both inputs send the same request to `POST /api/commands`.
+1. The React console accepts typed text, a final push-to-talk transcript, or a command extracted from an explicitly enabled wake-word session.
+2. All command inputs send the same request to `POST /api/commands`.
 3. The orchestrator first classifies the explicit action/status intents and constructs typed payloads. Known connector boundaries remain deterministic.
-4. A message outside those intents becomes `assistant.chat`. The Ollama provider checks the configured model, builds a bounded identity/history/approved-memory prompt and calls non-streaming `POST /api/chat`. It returns generated text only; it has no tool or action executor.
+4. A message outside those intents becomes `assistant.chat`. The Ollama provider reuses a short-lived readiness cache, builds a bounded identity/history/approved-memory prompt and calls non-streaming `POST /api/chat` with a ten-minute `keep_alive`. It returns generated text only; it has no tool or action executor.
 5. Read-only local status/time/list intents complete immediately. If Ollama is offline, disabled or missing the selected model, model chat returns an honest `unavailable`, `model_missing` or disabled response without affecting fixed commands.
-6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview create a pending approval and an audit event, regardless of whether the request was typed or spoken.
+6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview and fixed app/folder launches create a pending approval and an audit event, regardless of whether the request was typed or spoken.
 7. The user approves or rejects the exact action payload in the console.
 8. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. Rejection performs no side effect, and a resolved approval cannot be executed again.
 9. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream.
@@ -20,13 +20,15 @@
 - `src/components/NexusGlobe.tsx`: deterministic particle world, atmospheric layers, graticules, network arcs, packets, satellites and interactive camera controls.
 - `src/components/NexusHumanoid.tsx`: original particle humanoid with contoured face, separate jaw, neck/torso, blinking, head motion and speech/viseme-driven mouth movement.
 - `src/components/SceneZoomControls.tsx`: shared accessible zoom-in, zoom-out and reset actions; each Three.js scene owns its camera.
-- `src/lib/useVoice.ts`: explicit microphone sessions, browser speech recognition, spoken responses and interruption. No audio is stored by Nexus.
+- `src/lib/useVoice.ts`: explicit push-to-talk and opt-in continuous wake-word recognition sessions, guarded restart, speech-time capture pause, spoken responses and interruption. No audio is stored by Nexus.
+- `src/components/SystemControl.tsx`: bounded directory search, exact-path launch requests, fixed application detection and explicit inactive screen status.
 - `src/lib/camera.ts`: the only browser webcam request helper; it fixes video to the user-facing camera, sets `audio: false` and stops every track on cleanup.
 - `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions and browser-tab handoff.
 - `backend/main.py`: FastAPI routes, validation, model-status endpoint and production static hosting.
-- `backend/ollama.py`: local Ollama model detection, non-streaming inference, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
-- `backend/commands.py`: explicit intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction and connector boundaries.
-- `backend/connectors.py`: approval-time URL revalidation, client-browser confirmation or local browser fallback, and fixed-argument Git-status execution.
+- `backend/ollama.py`: local Ollama model detection, short-lived readiness caching, non-streaming inference, model keep-alive, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
+- `backend/commands.py`: explicit intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction, bounded folder-request resolution and connector boundaries.
+- `backend/connectors.py`: approval-time payload revalidation, client-browser confirmation or local browser fallback, fixed-argument Git-status execution, and fixed local application/folder launches.
+- `backend/system.py`: bounded local directory discovery, configured-root validation, fixed application detection, shell-free argument lists and explicit inactive screen status.
 - `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, camera-session metadata, typed approvals, settings and audit events.
 - `data/nexus.db`: local runtime data, excluded from Git.
 
@@ -36,7 +38,7 @@
 
 The default model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, non-streaming responses, generation limits and bounded response text.
 
-The system prompt supplies the configured assistant name and explicit truthfulness/action boundaries. Up to six recent completed exchanges and eight approved memories are included with per-item limits. Memories and history are labelled untrusted data. No embedding retrieval, model training, fine-tuning, weight update or autonomous self-modification occurs.
+The system prompt supplies the configured assistant name and explicit truthfulness/action boundaries. Up to four recent completed exchanges and six approved memories are included with per-item limits. Memories and history are labelled untrusted data. No embedding retrieval, model training, fine-tuning, weight update or autonomous self-modification occurs.
 
 Model output becomes only the `assistant.chat` response and timeline text. It cannot create an approval, invoke a connector, select a tool, run code or change settings. A user can still request a supported action through the deterministic command path and approve its exact payload separately.
 
@@ -70,11 +72,25 @@ There is no backend webcam connector, frame-upload route, snapshot operation, re
 
 ## Voice and avatar contract
 
-Microphone capture starts only after the user presses the Speak control. Recognition runs as one bounded interaction rather than an always-on wake-word listener. Interim text is displayed locally; a final transcript enters the normal command path. Speech boundary events select a viseme, while the avatar render loop produces visible mouth and jaw movement for the active utterance. Cancelling synthesis returns the avatar to its resting mouth position.
+Microphone recognition starts only after the user presses Speak or explicitly enables the wake-word session. Push-to-talk is one bounded interaction. The opt-in wake session uses the browser's continuous recognition mode while the console is open, displays its state and provides a Stop control; activation is never restored automatically after a reload.
+
+The wake phrase must occur at the beginning of a transcript, optionally after `hey`, `ok` or `okay`. A phrase followed by a command enters the normal command path immediately. The phrase alone arms one follow-up command for eight seconds. Recognition pauses while a command is being processed or a response is spoken, then uses a guarded restart. Fatal permission, network or audio errors disable the session instead of retrying indefinitely. Nexus stores no microphone audio.
+
+A final transcript is treated exactly like typed input. Browser speech recognition recognises words, not the speaker's identity, and may use a browser/vendor network service. Speech boundary events select a viseme, while the avatar render loop produces visible mouth and jaw movement for the active utterance. Cancelling synthesis returns the avatar to its resting mouth position.
 
 Both visual models are generated locally from deterministic particles and require no downloaded model or external avatar service. OrbitControls supplies damped drag rotation and scroll/pinch zoom with bounded camera distances. Reduced-motion preferences disable autonomous scene rotation/movement while keeping direct interaction available. A static SVG fallback is shown if WebGL cannot initialise.
 
-Fully offline recognition/synthesis and wake-word support require separately selected local models and are not represented as active. The second-monitor humanoid experience remains later work.
+Fully offline recognition/synthesis, a persistent background/offline wake engine and speaker profiles require separately selected local models and consent controls. They are not represented as active. The second-monitor humanoid experience remains later work.
+
+## Local applications, folders and screen contract
+
+Directory discovery defaults to the user's home directory. `NEXUS_SYSTEM_ROOTS` can explicitly configure up to eight roots using the operating system's path-list separator. Discovery is breadth-first and bounded to 600 scanned entries, depth two and 30 returned results. It skips hidden directories, does not follow symlinks and reads no file contents.
+
+Folder requests are resolved before an approval is created. Missing or ambiguous names return available exact-name choices without creating a launch approval. An exact match creates `system.open_folder` with the resolved absolute path and selected application. Explicit paths must remain inside a configured root and may not traverse hidden directories.
+
+The application catalog is fixed to VS Code (`code`, `code-insiders` or `codium`) and the platform file manager. VS Code receives only `--new-window` and the stored absolute directory. File-manager and application-only launches likewise use connector-defined executables and argument patterns with `shell=False`. The stored payload and resolved directory are revalidated during the single-use approval transaction; a missing executable or launch failure is reported honestly.
+
+`GET /api/system/status` reports application installation and screen state. Screen capture remains `not_configured`, with no active capture, visible monitor inventory, visual understanding, activity inference or clicking. `GET /api/system/directories` performs only the bounded discovery described above. Future screen connectors need visible capture consent, exact monitor/window scope, retention limits, target confirmation and separate approval for every click or input action.
 
 ## Browser and terminal contract
 

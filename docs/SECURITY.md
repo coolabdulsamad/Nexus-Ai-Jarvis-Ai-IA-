@@ -4,11 +4,11 @@
 
 - Nexus binds development services to localhost. Do not enable router port forwarding.
 - The repository excludes `.env`, local databases and personal runtime data.
-- Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status and camera preview require explicit approval. Rejection performs no action.
+- Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview and fixed local application/folder launches require explicit approval. Rejection performs no action.
 - An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path. Camera approval creates session metadata but cannot by itself grant browser camera permission.
 - Audit events record command receipt, approval requests, decisions, settings updates, connector outcomes and browser-reported camera lifecycle changes.
 - Direct settings changes are reversible local preferences chosen by the user; they do not grant connector privileges or approve commands.
-- There is no arbitrary shell endpoint, exact-target browser clicking, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
+- There is no arbitrary shell endpoint, exact-target browser clicking, screen capture/understanding or monitor-clicking connector, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
 
 ## Local model and untrusted output
 
@@ -66,20 +66,30 @@
 - Execution uses an argument list with `shell=False`, the Nexus project root, a six-second timeout and bounded captured output.
 - The action cannot edit, stage, commit, push, delete or deploy. Arbitrary terminal/coding requests remain unsupported.
 
+## Local applications, folders and screen boundaries
+
+- Directory discovery is limited to the user's home directory or explicitly configured `NEXUS_SYSTEM_ROOTS`, with at most eight roots, 600 scanned entries, depth two and 30 results. Hidden directories are skipped, symlinks are not followed and file contents are never read.
+- Missing or ambiguous folder names create no launch approval. Exact-name matches and explicit absolute paths must resolve to a real directory inside one configured root.
+- Only fixed VS Code and platform file-manager launch patterns exist. User text, model output and approval payloads cannot select arbitrary executables, arguments, working directories or shells.
+- Launch execution revalidates the stored exact path and application, uses an argument list with `shell=False`, and reports unavailable or failed outcomes rather than claiming a window opened.
+- Approval authorises one exact local application or folder launch. It does not grant access to file contents, terminal commands, screen content, clicks, later launches or other devices.
+- Screen status is deliberately inactive: no screenshots, display capture, monitor enumeration, visual model, activity inference or mouse/keyboard control is configured. Future capture and input control require visible consent, exact scope, target confirmation, retention rules, separate approvals and audits.
+
 ## Voice and microphone
 
-- Microphone recognition starts only after an explicit Speak button press. There is no always-on wake-word listener in this phase.
-- A visible listening state and stop control are provided. Nexus does not save microphone audio or transcripts as audio files.
+- Microphone recognition starts only after an explicit Speak press or an explicit Enable wake word action. The wake session is opt-in, visibly active, limited to the open browser console and never restored automatically after reload.
+- Wake phrases are matched only at the beginning of a transcript, optionally after `hey`, `ok` or `okay`. Wake alone arms one follow-up for eight seconds; wake plus command submits that command through the normal path.
+- A visible listening state and Stop control are provided. Capture pauses during command processing and spoken responses; fatal recognition errors disable the session. Nexus does not save microphone audio or transcripts as audio files.
 - A final transcript is treated exactly like typed input: it cannot bypass intent validation, approval policy or audit history. Recognised command text and responses are included in the local timeline.
 - Browser speech recognition may use a browser/vendor speech service and may require network access. Nexus does not claim that this phase is fully offline. Use text when network recognition is not acceptable.
 - Spoken responses use the browser/operating system's available speech synthesizer. Availability and voice selection vary.
-- Voice identity is a convenience signal, not sole authorisation for sensitive actions.
+- Browser speech recognition recognises words, not speaker identity. No voice-profile recognition or authentication is active. Voice alone must never unlock a device or authorise a sensitive action.
 
 ## Risk tiers
 
 - Tier 0: read-only local status, time, note/memory listing, conversation timeline, camera-session status and audit inspection.
 - Tier 1: reversible or tightly scoped local actions, including approved note/memory creation, not-connected device registration and the fixed Git-status read.
-- Tier 2: external or sensitive actions, including browser navigation and local camera preview; future messages, recording and Git push also belong here.
+- Tier 2: external or sensitive actions, including browser navigation, local camera preview and approved local application/folder launches; future screen capture/clicking, messages, recording and Git push also belong here.
 - Tier 3: high-impact actions, including deletion, production deployment and unlocking.
 - Blocked: disabling audit, bypassing consent, stealing secrets or expanding privileges through conversation.
 
