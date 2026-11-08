@@ -110,6 +110,7 @@ def test_voice_and_avatar_settings_persist(monkeypatch, tmp_path):
             "avatar_mode": "globe",
             "model_enabled": True,
             "model_name": "qwen2.5:3b",
+            "wake_word": "Nexus",
         }
 
         updated = api.post(
@@ -142,6 +143,8 @@ def test_settings_validation_and_partial_update(monkeypatch, tmp_path):
         assert api.post("/api/settings", json={"assistant_name": "   "}).status_code == 422
         assert api.post("/api/settings", json={"voice_rate": 2.0}).status_code == 422
         assert api.post("/api/settings", json={"avatar_mode": "robot"}).status_code == 422
+        assert api.post("/api/settings", json={"wake_word": "<script>"}).status_code == 422
+        assert api.post("/api/settings", json={"wake_word": "  Jarvis  "}).json()["wake_word"] == "Jarvis"
 
         response = api.post("/api/settings", json={"avatar_mode": "humanoid"})
         assert response.status_code == 200

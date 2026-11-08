@@ -138,3 +138,18 @@ def test_empty_model_response_is_an_honest_failure(monkeypatch, tmp_path):
         assert response["status"] == "unavailable"
         assert "no usable text" in response["message"]
         assert "No device or system action was executed" in response["message"]
+
+
+def test_ready_status_is_reused_and_model_stays_warm(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("backend.ollama.OllamaAssistant._request", ready_ollama(calls, "Short answer."))
+    with make_client(monkeypatch, tmp_path) as api:
+        assert api.get("/api/assistant/status").json()["state"] == "ready"
+        assert api.post("/api/commands", json={"text": "First question"}).json()["status"] == "completed"
+        assert api.post("/api/commands", json={"text": "Second question"}).json()["status"] == "completed"
+        assert [path for path, _payload, _timeout in calls].count("/api/tags") == 1
+        chat_payloads = [payload for path, payload, _timeout in calls if path == "/api/chat"]
+        assert len(chat_payloads) == 2
+        assert all(payload["keep_alive"] == "10m" for payload in chat_payloads)
+        assert all(payload["options"]["num_predict"] == 260 for payload in chat_payloads)
+        assert all(payload["options"]["num_ctx"] == 3072 for payload in chat_payloads)
