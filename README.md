@@ -1,6 +1,6 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant with **real free-form conversation through a configured local Ollama model**, plus a separate validated command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, browser voice interaction, approval-gated browser navigation/search, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes.
+Nexus is a local-first personal AI assistant with **real free-form conversation through a configured local Ollama model**, plus a separate validated command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, push-to-talk and opt-in wake-word browser sessions, approval-gated browser navigation/search, bounded local folder discovery, approval-gated VS Code/file-manager launching, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes.
 
 Ollama supplies model **inference**, not automatic training or self-modification. Nexus does **not** pretend that a model is available when Ollama is offline, that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile control, IP/CCTV or ESP32-CAM connectors are already active.
 
@@ -46,7 +46,9 @@ Explain quantum computing in simple terms.
 What can you help me plan today?
 ```
 
-The model receives the assistant name saved in **Assistant & model**, up to six recent conversation exchanges and up to eight explicitly approved typed memories. These inputs are bounded and marked as untrusted reference data. This is conversational context, not semantic memory search or training. Select another installed model or disable free-form chat in **Assistant & model**; the setting persists locally.
+The model receives the assistant name saved in **Assistant & model**, up to four recent conversation exchanges and up to six explicitly approved typed memories. These inputs are bounded and marked as untrusted reference data. This is conversational context, not semantic memory search or training. Select another installed model or disable free-form chat in **Assistant & model**; the setting persists locally.
+
+Phase 08 reuses a recent successful readiness check for 20 seconds, keeps the model warm in Ollama for ten minutes, reduces default generation/context limits, asks for concise ordinary answers, and updates the visible result before refreshing the rest of the dashboard in the background. Model speed still depends on your model, hardware, prompt and current load; the first response after an idle period can take longer.
 
 Optional environment configuration belongs in `.env` (never commit it):
 
@@ -80,6 +82,9 @@ No cloud model provider is connected in this phase. A future cloud route must be
 18. Respond to the browser's separate camera prompt. Denial marks the session `unavailable`; allowing it starts the local preview and marks it `active` only after a real video stream is available.
 19. Choose **Stop camera**. Nexus immediately releases every media track, clears the preview and records `stopped`. Leaving or reloading the page also releases the stream and makes a best-effort stopped report.
 20. Send `Camera status` for a read-only summary. Session history contains metadata and timestamps only—never images, video or audio.
+21. Open **System control**, search for a real folder such as `Documents`, then choose **VS Code**. Confirm that the approval contains the exact resolved path. Rejection opens nothing; approval revalidates the directory and uses a fixed executable/argument list.
+22. Send `Open VS Code` or `Open File Manager`. These are fixed catalog actions, not arbitrary executable names. An unavailable application is reported honestly.
+23. Configure a wake word in **Assistant & model**, then choose **Enable “Nexus”** in the main console. Say `Nexus, what time is it?`, or say `Nexus` alone followed by one command within eight seconds. Choose **Stop wake word** to end the microphone session.
 
 ## Camera preview and consent boundary
 
@@ -114,14 +119,31 @@ No cloud model provider is connected in this phase. A future cloud route must be
 - Terminal support is deliberately limited to `git status --short --branch`. It uses a fixed argument list, no shell, a six-second timeout, captured output and the Nexus project root as its working directory.
 - Browser, terminal, note and typed-memory requests use the same approval, rejection and audit path. Typed and spoken commands receive no special privileges.
 
+## Local apps, folders and screen boundary
+
+- `GET /api/system/directories` searches directory metadata under `NEXUS_SYSTEM_ROOTS`, defaulting to your home directory. It scans at most 600 entries, two directory levels deep, returns at most 30 results, skips hidden directories and symlinks, and never reads file contents.
+- Folder commands resolve an exact directory before creating an approval. Ambiguous names return choices; missing, hidden or outside-root paths create no launch approval. Explicit absolute paths must still be inside a configured root.
+- The application catalog contains only VS Code and the platform file manager. `system.open_application` and `system.open_folder` approvals are revalidated and executed with fixed argument lists and `shell=False`. The payload cannot select an arbitrary executable or shell string.
+- `GET /api/system/status` reports roots, application detection and discovery limits. Screen capture, monitor inventory, visual screen understanding and clicking remain `not_configured`; the console never simulates them.
+- VS Code must be available as `code`, `code-insiders` or `codium` on the API host's PATH. In VS Code, its shell-command installer may be needed. On WSL, launches occur in the WSL/Windows integration environment available to those executables.
+
+Example root configuration in `.env`:
+
+```bash
+# Linux/macOS
+NEXUS_SYSTEM_ROOTS=/home/you:/mnt/projects
+# Windows uses semicolons: C:\Users\you;D:\Projects
+```
+
 ## Voice and humanoid mode
 
 1. Use **Globe / Humanoid** above the visual assistant to switch modes. The choice is saved locally. Drag either model to rotate it; scroll/pinch or use the dedicated buttons to zoom, and use the reset button to restore the camera.
 2. Open **Assistant & model** to change the assistant name, select the Ollama model, enable spoken responses, adjust speech rate and preview the voice.
 3. Choose **Speak to Nexus** and allow the browser's microphone prompt. Speak one command; its final transcript enters the same command path as typed text.
 4. Choose **Stop listening** to cancel capture or **Stop speaking** to interrupt a reply. The humanoid mouth animates during speech.
+5. Set the wake-word phrase in **Assistant & model**, then explicitly enable it from the main console. A continuous browser recognition session listens for the phrase at the start of speech. The name alone arms one follow-up for eight seconds; a name plus command submits immediately. Wake capture pauses while a command is processed or spoken, restarts with visible state, and never reactivates automatically after a page reload.
 
-This voice slice uses the browser Web Speech API. Chrome or Edge on localhost is recommended. Speech-recognition support varies, and some browsers use a network speech service; Nexus does not claim fully offline recognition in this phase. No always-on wake word is active, and Nexus does not store microphone audio. Text remains available as a fallback.
+This voice slice uses the browser Web Speech API. Chrome or Edge on localhost is recommended. Speech-recognition support varies, and some browsers use a network speech service; Nexus does not claim fully offline recognition or a separate local wake-word engine. Browser speech recognition identifies words, not the speaker, and voice identity never authorises sensitive actions. Nexus does not store microphone audio; recognized command text and responses remain in the local timeline. Text remains available as a fallback.
 
 The setup script installs frontend packages through npm 12.2.2 to avoid an npm 10.9.9 peer-resolution failure. It does not change your global npm installation.
 
@@ -135,7 +157,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–07 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 07 adds no model weights to Git; Ollama manages model downloads separately.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–08 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 08 adds only a default wake-word setting; it never enables the microphone on upgrade. Ollama manages model downloads separately, and no model weights are committed to Git.
 
 ## Tests and checks
 
@@ -185,12 +207,12 @@ Open **http://localhost:8000**. The named volume preserves notes, typed memories
 
 ## Project map
 
-- `backend/` — FastAPI application, Ollama inference client, command/model orchestrator, scoped browser/Git connectors, SQLite repository and tests.
-- `src/` — React console, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
+- `backend/` — FastAPI application, Ollama inference client, command/model orchestrator, bounded system/app connectors, scoped browser/Git connectors, SQLite repository and tests.
+- `src/` — React console, wake/push-to-talk voice lifecycle, system-control panel, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
 - `scripts/` — setup, development and verification commands.
 - `docs/` — architecture, security boundaries and delivery roadmap.
 - `Dockerfile` — self-contained production build with persistent `/data` volume.
 
 ## Current boundaries
 
-This phase intentionally contains no model training/fine-tuning, autonomous self-modification, always-on wake-word engine, arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture, remote tracking or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
+This phase intentionally contains no model training/fine-tuning, autonomous self-modification, persistent background/offline wake-word engine, speaker authentication, screen capture or monitor understanding, exact-target clicking, arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control/tracking, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
