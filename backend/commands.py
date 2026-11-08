@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 from .connectors import validated_browser_url
 from .store import Store
+from .system import APPLICATIONS, resolve_directory_request
 
 if TYPE_CHECKING:
     from .ollama import OllamaAssistant
@@ -63,6 +64,20 @@ CAPABILITIES = [
         "description": "Run only git status --short --branch after approval. No arbitrary shell input or repository changes.",
     },
     {
+        "id": "local-system",
+        "label": "Approved apps & folders",
+        "status": "available",
+        "tier": 2,
+        "description": "Discover bounded directory metadata and open VS Code, the file manager or a validated folder after approval. No arbitrary shell commands.",
+    },
+    {
+        "id": "screen",
+        "label": "Screen & multi-monitor awareness",
+        "status": "planned",
+        "tier": 2,
+        "description": "No display capture, screen understanding, monitor inventory or clicking is active. These need separate visible consent and scoped connectors.",
+    },
+    {
         "id": "devices",
         "label": "Owned-device registry",
         "status": "available",
@@ -88,7 +103,7 @@ CAPABILITIES = [
         "label": "Voice & animated avatar",
         "status": "available",
         "tier": 1,
-        "description": "Push-to-talk input, spoken replies, interruption and interactive globe/humanoid modes. Browser support varies.",
+        "description": "Push-to-talk and opt-in wake-word sessions, spoken replies, interruption and interactive avatars. Browser speech recognition is not speaker identification.",
     },
     {
         "id": "mobile",
@@ -185,6 +200,35 @@ def _browser_request(text: str) -> tuple[str, dict[str, Any]] | None:
         return None
 
 
+def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
+    app_names = r"(?:vs\s*code|visual\s+studio\s+code|vscode|file\s+manager|files)"
+    folder_patterns = [
+        rf"^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?(?:folder|directory)\s+(.+?)(?:\s+(?:in|with|using)\s+({app_names}))?$",
+        rf"^(?:please\s+)?(?:open|launch)\s+(.+?)\s+(?:in|with|using)\s+({app_names})$",
+    ]
+    for pattern in folder_patterns:
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        query = match.group(1).strip().strip("'\"")
+        app_name = (match.group(2) or "vscode").lower()
+        if not query or len(query) > 200 or any(char in query for char in "\x00\r\n"):
+            return None
+        application = "files" if app_name in {"files", "file manager"} else "vscode"
+        return "system.open_folder", {"query": query, "application": application}
+
+    application = re.match(
+        rf"^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?({app_names})$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if application:
+        app_name = application.group(1).lower()
+        app_id = "files" if app_name in {"files", "file manager"} else "vscode"
+        return "system.open_application", {"application": app_id}
+    return None
+
+
 def _approval_command(
     command_id: str,
     base: dict[str, Any],
@@ -205,6 +249,7 @@ def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = 
     memory_request = _memory_request(normalized)
     device_request = _device_request(normalized)
     browser_request = _browser_request(normalized)
+    system_request = _system_request(normalized)
 
     if memory_request:
         intent = "memory.create"
@@ -240,6 +285,8 @@ def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = 
         "show repository status",
     }:
         intent = "terminal.git_status"
+    elif system_request:
+        intent = system_request[0]
     elif browser_request:
         intent = browser_request[0]
     elif lowered.startswith("register "):
@@ -306,6 +353,49 @@ def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = 
             "message": "I’m ready to save this note. Review the request and approve or reject it.",
             "approval": approval,
         }
+
+    if intent == "system.open_application" and system_request:
+        payload = system_request[1]
+        label = APPLICATIONS[payload["application"]]["label"]
+        return _approval_command(
+            command_id,
+            base,
+            store,
+            intent,
+            payload,
+            f"Permission requested to launch the fixed {label} connector.",
+            f"Approval required to open {label}. No application has launched yet.",
+        )
+
+    if intent == "system.open_folder" and system_request:
+        request_payload = system_request[1]
+        resolved = resolve_directory_request(request_payload["query"])
+        if resolved["state"] != "found":
+            message = resolved.get("message") or "No unique folder was resolved. Nothing was opened."
+            store.finish_command(command_id, "unavailable", message)
+            return {
+                **base,
+                "status": "unavailable",
+                "message": message,
+                "directories": resolved["directories"],
+            }
+        directory = resolved["directory"]
+        application = request_payload["application"]
+        label = APPLICATIONS[application]["label"]
+        payload = {
+            "path": directory["path"],
+            "name": directory["name"],
+            "application": application,
+        }
+        return _approval_command(
+            command_id,
+            base,
+            store,
+            intent,
+            payload,
+            f"Permission requested to open the validated folder {directory['path']} with {label}.",
+            f"Approval required to open {directory['path']} with {label}. Nothing has opened yet.",
+        )
 
     if intent in {"browser.navigate", "browser.search"} and browser_request:
         action, payload = browser_request

@@ -32,6 +32,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "avatar_mode": "globe",
     "model_enabled": True,
     "model_name": "qwen2.5:3b",
+    "wake_word": "Nexus",
 }
 
 DEVICE_PLATFORMS: dict[str, dict[str, Any]] = {
@@ -378,6 +379,8 @@ class Store:
                     response = "Request rejected; no device was registered or connected."
                 elif row["action"] == "camera.preview":
                     response = "Request rejected; camera access was not requested and no preview started."
+                elif row["action"] in {"system.open_application", "system.open_folder"}:
+                    response = "Request rejected; no application or folder was opened."
                 else:
                     response = "Request rejected; no browser or terminal action was taken."
                 command_status = "rejected"
