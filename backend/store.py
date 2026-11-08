@@ -30,6 +30,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "voice_enabled": True,
     "voice_rate": 1.0,
     "avatar_mode": "globe",
+    "model_enabled": True,
+    "model_name": "qwen2.5:3b",
 }
 
 DEVICE_PLATFORMS: dict[str, dict[str, Any]] = {
