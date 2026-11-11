@@ -139,7 +139,7 @@ def resolve_directory_request(query: str) -> dict[str, Any]:
     if directories:
         return {
             "state": "ambiguous",
-            "message": "Several folders match. Use the System control panel to choose the exact folder.",
+            "message": "Several folders match. Which exact folder would you like? Choose below or reply with its name or number.",
             "directories": directories,
         }
     return {

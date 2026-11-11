@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -88,7 +88,7 @@ class OllamaAssistant:
         now = time.monotonic()
         if use_cache and self._status_cache:
             cached_at, cached_model, cached_enabled, cached = self._status_cache
-            ttl = 20.0 if cached["state"] == "ready" else 3.0
+            ttl = 60.0 if cached["state"] == "ready" else 3.0
             if cached_model == model and cached_enabled == enabled and now - cached_at < ttl:
                 return {**cached, "installed_models": list(cached["installed_models"])}
         result: dict[str, Any] = {
@@ -134,7 +134,65 @@ class OllamaAssistant:
             )
         return finish()
 
-    def respond(self, store: Store, text: str, current_command_id: str) -> dict[str, Any]:
+    def _stream_chat(
+        self,
+        payload: dict[str, Any],
+        on_token: Callable[[str], None],
+    ) -> str:
+        """Read bounded Ollama NDJSON and expose text only, never tool output."""
+        request = Request(
+            f"{self.base_url}/api/chat",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Accept": "application/x-ndjson"},
+            method="POST",
+        )
+        chunks: list[str] = []
+        received = 0
+        try:
+            with urlopen(request, timeout=self.chat_timeout) as response:
+                if response.status != 200:
+                    raise OllamaError(f"Ollama returned HTTP {response.status}.")
+                for raw_line in response:
+                    received += len(raw_line)
+                    if received > 2_000_000:
+                        raise OllamaError("Ollama returned too much response data.")
+                    if not raw_line.strip():
+                        continue
+                    data = json.loads(raw_line)
+                    if not isinstance(data, dict):
+                        raise OllamaError("Ollama returned an unexpected streaming response.")
+                    if data.get("error"):
+                        raise OllamaError("Ollama reported a model inference error.")
+                    message = data.get("message")
+                    token = message.get("content") if isinstance(message, dict) else None
+                    if isinstance(token, str) and token:
+                        chunks.append(token)
+                        on_token(token)
+        except HTTPError as error:
+            if error.code == 404:
+                raise OllamaError("The configured model is not installed in Ollama.") from error
+            raise OllamaError(f"Ollama returned HTTP {error.code}.") from error
+        except TimeoutError as error:
+            raise OllamaError("Ollama did not respond before the configured timeout.") from error
+        except URLError as error:
+            reason = getattr(error, "reason", "connection failed")
+            if isinstance(reason, TimeoutError):
+                raise OllamaError("Ollama did not respond before the configured timeout.") from error
+            raise OllamaError("Cannot connect to Ollama. Start its local service and try again.") from error
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise OllamaError("Ollama returned an invalid streaming response.") from error
+        answer = "".join(chunks).strip()[:12000]
+        if not answer:
+            raise OllamaError("The model returned no usable text. No action was executed.")
+        return answer
+
+    def respond(
+        self,
+        store: Store,
+        text: str,
+        current_command_id: str,
+        on_token: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         settings = store.get_settings()
         model = settings["model_name"]
         base = {"provider": "ollama", "model": model, "memory_count": 0}
@@ -189,23 +247,23 @@ Approved local memories:
             messages.append({"role": "assistant", "content": entry["response"][:1600]})
         messages.append({"role": "user", "content": text})
 
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": on_token is not None,
+            "keep_alive": "30m",
+            "options": {"temperature": 0.4, "num_predict": 260, "num_ctx": 3072},
+        }
         try:
-            data = self._request(
-                "/api/chat",
-                {
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                    "keep_alive": "10m",
-                    "options": {"temperature": 0.4, "num_predict": 260, "num_ctx": 3072},
-                },
-                timeout=self.chat_timeout,
-            )
-            message = data.get("message")
-            content = message.get("content") if isinstance(message, dict) else None
-            if not isinstance(content, str) or not content.strip():
-                raise OllamaError("The model returned no usable text. No action was executed.")
-            answer = content.strip()[:12000]
+            if on_token is not None:
+                answer = self._stream_chat(payload, on_token)
+            else:
+                data = self._request("/api/chat", payload, timeout=self.chat_timeout)
+                message = data.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                if not isinstance(content, str) or not content.strip():
+                    raise OllamaError("The model returned no usable text. No action was executed.")
+                answer = content.strip()[:12000]
         except OllamaError as error:
             return {
                 **base,

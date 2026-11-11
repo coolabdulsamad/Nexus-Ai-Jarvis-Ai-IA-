@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import threading
+import time
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
+from queue import Queue
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -43,7 +47,8 @@ class SettingsUpdate(BaseModel):
     avatar_mode: Literal["globe", "humanoid"] | None = None
     model_enabled: bool | None = None
     model_name: str | None = Field(default=None, min_length=1, max_length=100)
-    wake_word: str | None = Field(default=None, min_length=2, max_length=40)
+    wake_word: str | None = Field(default=None, min_length=2, max_length=240)
+    speech_locale: Literal["en-NG", "en-US", "en-GB"] | None = None
 
 
 def create_app() -> FastAPI:
@@ -95,11 +100,59 @@ def create_app() -> FastAPI:
 
     @app.post("/api/commands", status_code=200, tags=["commands"])
     def command(payload: CommandRequest, request: Request) -> dict:
-        return handle_command(payload.text, store(request), assistant(request))
+        started = time.perf_counter()
+        result = handle_command(payload.text, store(request), assistant(request))
+        result["timing"] = {"total_ms": round((time.perf_counter() - started) * 1000, 1)}
+        return result
+
+    @app.post("/api/commands/stream", status_code=200, tags=["commands"])
+    def command_stream(payload: CommandRequest, request: Request) -> StreamingResponse:
+        started = time.perf_counter()
+        events: Queue[tuple[str, dict | None]] = Queue()
+        first_token_ms: list[float | None] = [None]
+
+        def run_command() -> None:
+            def on_token(token: str) -> None:
+                if first_token_ms[0] is None:
+                    first_token_ms[0] = round((time.perf_counter() - started) * 1000, 1)
+                events.put(("token", {"text": token}))
+
+            try:
+                result = handle_command(
+                    payload.text,
+                    store(request),
+                    assistant(request),
+                    on_token=on_token,
+                )
+                timing: dict[str, float] = {"total_ms": round((time.perf_counter() - started) * 1000, 1)}
+                if first_token_ms[0] is not None:
+                    timing["first_token_ms"] = first_token_ms[0]
+                result["timing"] = timing
+                events.put(("result", result))
+            except Exception:
+                events.put(("error", {"message": "The command could not be completed. No action was authorised."}))
+            finally:
+                events.put(("done", None))
+
+        def generate():
+            thread = threading.Thread(target=run_command, name="nexus-command", daemon=True)
+            thread.start()
+            yield 'data: {"type":"start"}\n\n'
+            while True:
+                event_type, data = events.get()
+                if event_type == "done":
+                    break
+                yield f"data: {json.dumps({'type': event_type, **(data or {})})}\n\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/assistant/status", tags=["assistant"])
     def assistant_status(request: Request) -> dict:
-        return assistant(request).status(store(request))
+        return assistant(request).status(store(request), use_cache=True)
 
     @app.get("/api/settings", tags=["system"])
     def settings(request: Request) -> dict:
@@ -119,10 +172,21 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=422, detail="Enter a valid Ollama model name, such as qwen2.5:3b.")
             updates["model_name"] = model_name
         if "wake_word" in updates:
-            wake_word = updates["wake_word"].strip()
-            if len(wake_word) < 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9' -]{0,39}", wake_word):
-                raise HTTPException(status_code=422, detail="Use a wake word with 2–40 letters, numbers, spaces, apostrophes or hyphens.")
-            updates["wake_word"] = wake_word
+            phrases = [phrase.strip() for phrase in re.split(r"[,\n]", updates["wake_word"]) if phrase.strip()]
+            if not 1 <= len(phrases) <= 8 or any(
+                len(phrase) < 2
+                or len(phrase) > 40
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9' -]{1,39}", phrase)
+                for phrase in phrases
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Use 1–8 comma-separated wake phrases, each with 2–40 letters, numbers, spaces, apostrophes or hyphens.",
+                )
+            unique_phrases: dict[str, str] = {}
+            for phrase in phrases:
+                unique_phrases.setdefault(phrase.casefold(), phrase)
+            updates["wake_word"] = ", ".join(unique_phrases.values())
         return store(request).update_settings(updates)
 
     @app.get("/api/system/status", tags=["system"])
