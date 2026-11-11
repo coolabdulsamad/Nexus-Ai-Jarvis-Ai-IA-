@@ -21,7 +21,7 @@ The setup script creates `.venv`, installs Python and npm dependencies, and prep
 
 ## Connect the real local AI brain
 
-Nexus now calls Ollama's native `GET /api/tags` and `POST /api/chat` APIs. Fixed commands continue to work without a model, but open-ended conversation honestly reports `unavailable` until Ollama and the selected model are ready.
+Nexus now calls Ollama's native `GET /api/tags` and `POST /api/chat` APIs. The console uses `POST /api/commands/stream` to display model tokens as they arrive while preserving one final command/timeline result. Fixed commands continue to work without a model, but open-ended conversation honestly reports `unavailable` until Ollama and the selected model are ready.
 
 On Ubuntu/Linux, install Ollama and pull the default model:
 
@@ -48,7 +48,7 @@ What can you help me plan today?
 
 The model receives the assistant name saved in **Assistant & model**, up to four recent conversation exchanges and up to six explicitly approved typed memories. These inputs are bounded and marked as untrusted reference data. This is conversational context, not semantic memory search or training. Select another installed model or disable free-form chat in **Assistant & model**; the setting persists locally.
 
-Phase 08 reuses a recent successful readiness check for 20 seconds, keeps the model warm in Ollama for ten minutes, reduces default generation/context limits, asks for concise ordinary answers, and updates the visible result before refreshing the rest of the dashboard in the background. Model speed still depends on your model, hardware, prompt and current load; the first response after an idle period can take longer.
+Phase 09 streams model tokens into the visible result, reports measured first-token and total command timings, reuses a successful readiness check for 60 seconds, keeps the model warm for thirty minutes, and reduces post-command dashboard work from eleven requests to four. The model is still asked for concise ordinary answers with bounded generation/context. Streaming reduces time to the first visible text; it does not guarantee faster total inference on every machine. Model speed depends on your model, hardware, prompt and current load.
 
 Optional environment configuration belongs in `.env` (never commit it):
 
@@ -84,7 +84,9 @@ No cloud model provider is connected in this phase. A future cloud route must be
 20. Send `Camera status` for a read-only summary. Session history contains metadata and timestamps only—never images, video or audio.
 21. Open **System control**, search for a real folder such as `Documents`, then choose **VS Code**. Confirm that the approval contains the exact resolved path. Rejection opens nothing; approval revalidates the directory and uses a fixed executable/argument list.
 22. Send `Open VS Code` or `Open File Manager`. These are fixed catalog actions, not arbitrary executable names. An unavailable application is reported honestly.
-23. Configure a wake word in **Assistant & model**, then choose **Enable “Nexus”** in the main console. Say `Nexus, what time is it?`, or say `Nexus` alone followed by one command within eight seconds. Choose **Stop wake word** to end the microphone session.
+23. Configure comma-separated wake phrases and a recognition language in **Assistant & model**, then choose **Enable wake phrases**. Defaults are `Nexus, Hey` and `en-NG`. Say `Nextus, what time is it?`, `Next to, system status`, or `Hey` alone; bounded Nexus aliases cover common recognition variants. A phrase alone opens one ten-second command window. Choose **Stop voice session** to end capture.
+24. With the wake session still enabled, send `Open a folder`. Nexus asks which folder and, only after the spoken question finishes, listens for one answer for up to twelve seconds without another wake phrase. Answer with a folder name. If several match, choose an exact result or answer `the first one`; `cancel` opens nothing. Every resolved launch still requires approval.
+25. Ask a model question whose response ends in a question mark. The same bounded post-question reply window opens after speech. Use Stop speaking or Stop voice session to cancel. Typed commands remain available throughout.
 
 ## Camera preview and consent boundary
 
@@ -141,7 +143,9 @@ NEXUS_SYSTEM_ROOTS=/home/you:/mnt/projects
 2. Open **Assistant & model** to change the assistant name, select the Ollama model, enable spoken responses, adjust speech rate and preview the voice.
 3. Choose **Speak to Nexus** and allow the browser's microphone prompt. Speak one command; its final transcript enters the same command path as typed text.
 4. Choose **Stop listening** to cancel capture or **Stop speaking** to interrupt a reply. The humanoid mouth animates during speech.
-5. Set the wake-word phrase in **Assistant & model**, then explicitly enable it from the main console. A continuous browser recognition session listens for the phrase at the start of speech. The name alone arms one follow-up for eight seconds; a name plus command submits immediately. Wake capture pauses while a command is processed or spoken, restarts with visible state, and never reactivates automatically after a page reload.
+5. Set up to eight comma-separated wake phrases in **Assistant & model**, then explicitly enable them from the main console. `en-NG` is the default recognition locale; `en-US` and `en-GB` are also selectable, but browser/vendor support is not guaranteed. Nexus includes tightly bounded aliases for `nextus`, `nexis`, `next to` and similar common misrecognitions rather than broad fuzzy activation.
+6. A phrase followed by a command submits immediately. A phrase alone opens a ten-second command window. If a deterministic folder clarification or a completed model response ends in a question, Nexus opens one twelve-second reply window only after speech synthesis ends. Recognition is stopped during processing and throughout speech, and each recognition instance can dispatch only once.
+7. `Open a folder` produces `Which folder would you like to open with VS Code?`; the next voice reply is mapped back to the deterministic folder parser. Ambiguous choices support exact paths, unique names, numbers and ordinals. Cancellation produces no action, and no spoken follow-up can bypass exact-path validation, approval or audit history.
 
 This voice slice uses the browser Web Speech API. Chrome or Edge on localhost is recommended. Speech-recognition support varies, and some browsers use a network speech service; Nexus does not claim fully offline recognition or a separate local wake-word engine. Browser speech recognition identifies words, not the speaker, and voice identity never authorises sensitive actions. Nexus does not store microphone audio; recognized command text and responses remain in the local timeline. Text remains available as a fallback.
 
@@ -157,7 +161,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–08 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 08 adds only a default wake-word setting; it never enables the microphone on upgrade. Ollama manages model downloads separately, and no model weights are committed to Git.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–09 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 09 adds the `en-NG` speech-locale default and supports comma-separated wake phrases while preserving an existing saved wake phrase. It never enables the microphone on upgrade. Ollama manages model downloads separately, and no model weights are committed to Git.
 
 ## Tests and checks
 
@@ -175,7 +179,7 @@ curl http://127.0.0.1:11434/api/tags
 curl http://127.0.0.1:8000/api/assistant/status
 ```
 
-The last command must report `"state":"ready"`; then ask `Who are you?` in the Nexus console and confirm the result is labelled `OLLAMA INFERENCE`.
+The last command must report `"state":"ready"`; then ask `Who are you?` in the Nexus console and confirm the result is labelled `OLLAMA STREAM`, with visible first-token and total timings.
 
 ## Windows 11 development
 
