@@ -38,8 +38,12 @@ export default function VoiceSettings({
       setError('Enter the Ollama model to use.')
       return
     }
-    if (draft.wake_word.trim().length < 2) {
-      setError('Enter a wake word with at least two characters.')
+    if (draft.wake_word.split(/[,\n]/).filter((phrase) => phrase.trim()).length > 8) {
+      setError('Use no more than eight comma-separated wake phrases.')
+      return
+    }
+    if (draft.wake_word.split(/[,\n]/).some((phrase) => phrase.trim().length < 2)) {
+      setError('Enter wake phrases with at least two characters each.')
       return
     }
     setSaving(true)
@@ -82,15 +86,28 @@ export default function VoiceSettings({
           />
 
           <div className="wake-word-settings">
-            <label htmlFor="wake-word">Wake word</label>
-            <input
+            <label htmlFor="wake-word">Wake phrases</label>
+            <textarea
               id="wake-word"
               value={draft.wake_word}
               onChange={(event) => setDraft({ ...draft, wake_word: event.target.value })}
-              maxLength={40}
+              maxLength={240}
+              rows={2}
               autoComplete="off"
+              placeholder="Nexus, Hey, Computer"
             />
-            <p>Enable it from the main console when you want a listening session. Activation is never restored automatically after reload.</p>
+            <p>Separate up to eight phrases with commas. “Nexus” also accepts bounded recognition variants such as “nextus” and “next to.” Enable listening explicitly from the main console; it is never restored after reload.</p>
+            <label htmlFor="speech-locale">Recognition language</label>
+            <select
+              id="speech-locale"
+              value={draft.speech_locale}
+              onChange={(event) => setDraft({ ...draft, speech_locale: event.target.value as AssistantSettings['speech_locale'] })}
+            >
+              <option value="en-NG">English (Nigeria) — en-NG</option>
+              <option value="en-US">English (United States) — en-US</option>
+              <option value="en-GB">English (United Kingdom) — en-GB</option>
+            </select>
+            <p>en-NG may improve accent handling where the browser speech service supports it. Actual recognition support varies by browser and operating system.</p>
           </div>
 
           <div className="model-settings-block">
@@ -189,7 +206,7 @@ export default function VoiceSettings({
           <div><dt>Database</dt><dd>data/nexus.db</dd></div>
           <div><dt>Version</dt><dd>{version}</dd></div>
         </dl>
-        <div className="settings-safety"><ShieldCheck size={18} /><span>Speech recognition is not speaker identification. Browser speech services may process audio off-device. Sensitive actions still require explicit approval.</span></div>
+        <div className="settings-safety"><ShieldCheck size={18} /><span>Speech recognition is not speaker identification, so “only my voice” is not falsely enabled here. Browser speech services may process audio off-device. Sensitive actions still require explicit approval.</span></div>
       </section>
     </div>
   )
