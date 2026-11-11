@@ -417,7 +417,10 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .model-settings-block { margin: 20px 0; padding: 14px; border: 1px solid #39362a; background: #0e0f0e; }
 .wake-word-settings { margin-top: 18px; }
 .wake-word-settings > label { color: #b7bab2; font-size: 11px; }
-.wake-word-settings > input { width: 100%; height: 44px; margin-top: 8px; padding: 0 13px; border: 1px solid #363834; background: #0c0d0d; color: var(--text); font-size: 13px; }
+.wake-word-settings > textarea { width: 100%; min-height: 66px; margin-top: 8px; padding: 11px 13px; resize: vertical; border: 1px solid #363834; background: #0c0d0d; color: var(--text); font-size: 13px; line-height: 1.5; }
+.wake-word-settings > select { width: 100%; height: 44px; margin-top: 8px; padding: 0 13px; border: 1px solid #363834; background: #0c0d0d; color: var(--text); font-size: 12px; }
+.wake-word-settings > label + p { margin-bottom: 14px; }
+.command-panel[data-voice-state="followup_listening"] .voice-status, .command-panel[data-voice-state="wake_followup"] .voice-status { color: #c4ad58; }
 .wake-word-settings > p { margin: 7px 0 0; color: var(--faint); font-size: 9px; line-height: 1.55; }
 .model-settings-heading { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 13px; color: var(--yellow); }
 .model-settings-heading span { display: flex; flex-direction: column; gap: 4px; }
