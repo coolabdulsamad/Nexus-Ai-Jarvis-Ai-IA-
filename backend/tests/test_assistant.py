@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from backend.main import create_app
@@ -150,6 +152,36 @@ def test_ready_status_is_reused_and_model_stays_warm(monkeypatch, tmp_path):
         assert [path for path, _payload, _timeout in calls].count("/api/tags") == 1
         chat_payloads = [payload for path, payload, _timeout in calls if path == "/api/chat"]
         assert len(chat_payloads) == 2
-        assert all(payload["keep_alive"] == "10m" for payload in chat_payloads)
+        assert all(payload["keep_alive"] == "30m" for payload in chat_payloads)
         assert all(payload["options"]["num_predict"] == 260 for payload in chat_payloads)
         assert all(payload["options"]["num_ctx"] == 3072 for payload in chat_payloads)
+
+
+def test_streaming_chat_emits_tokens_before_one_persisted_result(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr("backend.ollama.OllamaAssistant._request", ready_ollama(calls))
+
+    def stream(self, payload, on_token):
+        assert payload["stream"] is True
+        assert payload["keep_alive"] == "30m"
+        on_token("I am ")
+        on_token("Nexus.")
+        return "I am Nexus."
+
+    monkeypatch.setattr("backend.ollama.OllamaAssistant._stream_chat", stream)
+    with make_client(monkeypatch, tmp_path) as api:
+        response = api.post("/api/commands/stream", json={"text": "Who are you?"})
+        assert response.status_code == 200
+        assert '"type": "token"' in response.text
+        assert response.text.index('"type": "token"') < response.text.index('"type": "result"')
+        events = [json.loads(line[5:]) for line in response.text.splitlines() if line.startswith("data:")]
+        tokens = [event["text"] for event in events if event["type"] == "token"]
+        result = next(event for event in events if event["type"] == "result")
+        assert tokens == ["I am ", "Nexus."]
+        assert result["message"] == "I am Nexus."
+        assert result["timing"]["first_token_ms"] >= 0
+        assert result["timing"]["total_ms"] >= result["timing"]["first_token_ms"]
+        timeline = api.get("/api/conversations").json()["conversations"]
+        assert len(timeline) == 1
+        assert timeline[0]["response"] == "I am Nexus."
+        assert api.get("/api/approvals").json()["approvals"] == []

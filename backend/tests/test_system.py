@@ -73,13 +73,28 @@ def test_ambiguous_and_missing_folders_create_no_launch_approval(monkeypatch, tm
         ambiguous = api.post("/api/commands", json={"text": "Open folder Projects in VS Code"}).json()
         assert ambiguous["status"] == "unavailable"
         assert len(ambiguous["directories"]) == 2
-        assert "choose the exact folder" in ambiguous["message"]
+        assert "Which exact folder" in ambiguous["message"]
+        assert ambiguous["follow_up"] == {"kind": "system.folder", "application": "vscode"}
 
         missing = api.post("/api/commands", json={"text": "Open folder DoesNotExist in VS Code"}).json()
         assert missing["status"] == "unavailable"
         assert "No folder was opened" in missing["message"]
         assert api.get("/api/approvals?status=pending").json()["approvals"] == []
 
+
+def test_incomplete_folder_request_asks_for_clarification_without_approval(monkeypatch, tmp_path):
+    api, root = make_client(monkeypatch, tmp_path)
+    (root / "Projects").mkdir()
+    with api:
+        clarification = api.post("/api/commands", json={"text": "Open a folder"}).json()
+        assert clarification["intent"] == "system.clarify_folder"
+        assert clarification["status"] == "completed"
+        assert clarification["message"] == "Which folder would you like to open with VS Code?"
+        assert clarification["follow_up"] == {"kind": "system.folder", "application": "vscode"}
+        assert "approval" not in clarification
+        follow_up = api.post("/api/commands", json={"text": "Open folder Projects in VS Code"}).json()
+        assert follow_up["status"] == "approval_required"
+        assert follow_up["approval"]["payload"]["path"] == str((root / "Projects").resolve())
 
 def test_outside_hidden_and_tampered_folder_payloads_never_launch(monkeypatch, tmp_path):
     api, root = make_client(monkeypatch, tmp_path)
