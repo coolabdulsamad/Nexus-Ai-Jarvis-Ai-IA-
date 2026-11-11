@@ -40,6 +40,8 @@ import NexusHumanoid from '@/components/NexusHumanoid'
 import SystemControl from '@/components/SystemControl'
 import VoiceSettings from '@/components/VoiceSettings'
 import { nexusApi } from '@/lib/api'
+import { folderReplyCommand, followUpForResult } from '@/lib/conversation'
+import type { PendingFollowUp } from '@/lib/conversation'
 import { requestCameraStream, stopCameraStream } from '@/lib/camera'
 import { eventLabel, formatTimestamp, shortId } from '@/lib/presentation'
 import { useVoice } from '@/lib/useVoice'
@@ -69,6 +71,7 @@ const quickCommands = [
   'Remember preference: I prefer concise answers',
   'Search Google for local AI safety',
   'Open VS Code',
+  'Open a folder',
   'Open folder Documents in VS Code',
   'Show devices',
   'Home status',
@@ -84,7 +87,8 @@ const defaultSettings: AssistantSettings = {
   avatar_mode: 'globe',
   model_enabled: true,
   model_name: 'qwen2.5:3b',
-  wake_word: 'Nexus',
+  wake_word: 'Nexus, Hey',
+  speech_locale: 'en-NG',
 }
 
 function BrandMark({ small = false }: { small?: boolean }) {
@@ -239,6 +243,7 @@ export default function Home() {
   const [result, setResult] = useState<CommandResult | null>(null)
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
+  const pendingFollowUpRef = useRef<PendingFollowUp | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState('')
@@ -247,10 +252,12 @@ export default function Home() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const {
     recognitionSupported,
+    voiceState,
     listening,
     wakeActive,
     wakeEnabled,
     wakeHeard,
+    followUpListening,
     speaking,
     transcript,
     viseme,
@@ -309,9 +316,26 @@ export default function Home() {
     }
   }, [])
 
+  const refreshAfterCommand = useCallback(async () => {
+    try {
+      const [nextHealth, nextConversations, nextApprovals, nextAudit] = await Promise.all([
+        nexusApi.health(),
+        nexusApi.conversations(),
+        nexusApi.approvals('pending'),
+        nexusApi.audit(),
+      ])
+      setHealth(nextHealth)
+      setConversations(nextConversations)
+      setApprovals(nextApprovals)
+      setAudit(nextAudit)
+    } catch {
+      // The visible command result remains authoritative; the next full refresh retries.
+    }
+  }, [])
+
   useEffect(() => {
     void refresh().finally(() => setLoading(false))
-    const interval = window.setInterval(() => void refresh(), 15000)
+    const interval = window.setInterval(() => void refresh(), 30000)
     return () => window.clearInterval(interval)
   }, [refresh])
 
@@ -463,13 +487,24 @@ export default function Home() {
     const normalized = text.trim()
     if (!normalized || busyRef.current) return
     busyRef.current = true
+    pendingFollowUpRef.current = null
     suspendWakeWord()
     setBusy(true)
     setError('')
     try {
-      const nextResult = await nexusApi.command(normalized)
+      const nextResult = await nexusApi.commandStream(normalized, (token) => {
+        setResult((current) => ({
+          command_id: current?.command_id === 'streaming' ? current.command_id : 'streaming',
+          intent: 'assistant.chat',
+          status: 'completed',
+          provider: 'ollama',
+          model: settings.model_name,
+          message: current?.command_id === 'streaming' ? current.message + token : token,
+        }))
+      })
       setResult(nextResult)
       setCommand('')
+      pendingFollowUpRef.current = followUpForResult(nextResult)
       if (nextResult.intent === 'memory.list') setMemoryView('typed')
       if (nextResult.intent === 'conversation.list') setMemoryView('timeline')
       if (nextResult.intent === 'device.list' || nextResult.intent === 'home.status') {
@@ -481,8 +516,13 @@ export default function Home() {
       if (nextResult.intent === 'camera.status') {
         document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
-      speak(nextResult.message, settings.voice_enabled, settings.voice_rate)
-      void refresh()
+      speak(
+        nextResult.message,
+        settings.voice_enabled,
+        settings.voice_rate,
+        Boolean(pendingFollowUpRef.current),
+      )
+      void refreshAfterCommand()
       return nextResult
     } catch (commandError) {
       setError(commandError instanceof Error ? commandError.message : 'Command failed safely.')
@@ -491,6 +531,20 @@ export default function Home() {
       setBusy(false)
       resumeWakeWord()
     }
+  }
+
+  const handleWakeCommand = (text: string) => {
+    const pending = pendingFollowUpRef.current
+    pendingFollowUpRef.current = null
+    const nextCommand = pending?.kind === 'system.folder' ? folderReplyCommand(text, pending) : text
+    if (!nextCommand) {
+      const message = 'Folder request cancelled. Nothing was opened.'
+      setResult({ command_id: 'voice-cancelled', intent: 'system.open_folder', status: 'completed', message })
+      speak(message, settings.voice_enabled, settings.voice_rate)
+      return
+    }
+    setCommand(nextCommand)
+    void executeCommand(nextCommand)
   }
 
   const submitCommand = (event?: FormEvent) => {
@@ -518,7 +572,7 @@ export default function Home() {
     startListening((text) => {
       setCommand(text)
       void executeCommand(text)
-    })
+    }, settings.speech_locale)
   }
 
   const toggleWakeWord = () => {
@@ -526,10 +580,7 @@ export default function Home() {
       stopWakeWord()
       return
     }
-    startWakeWord(settings.wake_word, (text) => {
-      setCommand(text)
-      void executeCommand(text)
-    })
+    startWakeWord(settings.wake_word, handleWakeCommand, settings.speech_locale)
   }
 
   const changeAvatar = async (avatarMode: AvatarMode) => {
@@ -552,7 +603,7 @@ export default function Home() {
     const saved = await nexusApi.updateSettings(nextSettings)
     setSettings(saved)
     if (!saved.voice_enabled) stopSpeaking()
-    if (saved.wake_word !== settings.wake_word) stopWakeWord()
+    if (saved.wake_word !== settings.wake_word || saved.speech_locale !== settings.speech_locale) stopWakeWord()
     void refresh()
   }
 
@@ -605,8 +656,9 @@ export default function Home() {
         output: outcome.output,
       })
       if (outcome.memory) setMemoryView('typed')
+      pendingFollowUpRef.current = null
       speak(outcome.message, settings.voice_enabled, settings.voice_rate)
-      void refresh()
+      void refreshAfterCommand()
       if (outcome.device) {
         document.getElementById('devices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }
@@ -676,7 +728,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.8.0</span>
+          <span className="build-number">LOCAL CORE / 0.9.0</span>
         </div>
       </aside>
 
@@ -689,7 +741,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 08</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 09</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -717,7 +769,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 08</span>
+                <span className="phase-badge">PHASE 09</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -743,7 +795,7 @@ export default function Home() {
                 <NexusHumanoid active={busy} listening={listening || wakeHeard} speaking={speaking} viseme={viseme} />
               )}
               <div className="globe-caption">
-                <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : wakeHeard ? 'WAKE WORD HEARD' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : wakeActive ? `WAITING FOR “${settings.wake_word.toUpperCase()}”` : 'AWAITING YOUR COMMAND'}</span>
+                <span className="globe-mode"><Sparkles size={14} /> {listening ? 'LISTENING' : followUpListening ? 'LISTENING FOR YOUR REPLY' : wakeHeard ? 'WAKE PHRASE HEARD' : speaking ? 'SPEAKING' : busy ? 'PROCESSING REQUEST' : wakeActive ? `WAITING FOR ${settings.wake_word.toUpperCase()}` : 'AWAITING YOUR COMMAND'}</span>
                 <span>DRAG · SCROLL · PINCH TO EXPLORE</span>
               </div>
               <div className="core-principles">
@@ -753,7 +805,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="command-panel">
+            <div className="command-panel" data-voice-state={voiceState}>
               <div className="command-panel-heading">
                 <span className="eyebrow">AI CONVERSATION + ACTIONS</span>
                 <span className="secure-label"><KeyRound size={12} /> ACTIONS PERMISSION GATED</span>
@@ -811,7 +863,7 @@ export default function Home() {
                   aria-pressed={wakeEnabled}
                 >
                   {wakeEnabled ? <Square size={14} /> : <AudioLines size={15} />}
-                  {wakeEnabled ? 'Stop wake word' : `Enable “${settings.wake_word}”`}
+                  {wakeEnabled ? 'Stop voice session' : 'Enable wake phrases'}
                 </button>
                 <button className="voice-settings-button" onClick={() => setSettingsOpen(true)}>
                   <AudioLines size={16} /> Assistant settings
@@ -826,16 +878,18 @@ export default function Home() {
                 {voiceError || (listening
                   ? transcript || 'Listening… speak now. Nothing is sent until speech is recognized.'
                   : speaking
-                    ? `${settings.assistant_name} is speaking. Wake-word capture is paused; use Stop speaking to interrupt.`
-                    : wakeHeard
-                      ? transcript || 'Wake word heard. Say one command within eight seconds.'
-                      : wakeActive
-                        ? transcript || `Listening for “${settings.wake_word}”. Say the name alone, then a command, or say both together.`
-                        : wakeEnabled
-                          ? 'Wake-word session is paused while your command is processed and will resume automatically.'
-                          : recognitionSupported
-                            ? 'Microphone stays off until you choose Speak or Enable wake word. Browser speech recognition is not speaker identification and may use a vendor speech service.'
-                            : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
+                    ? `${settings.assistant_name} is speaking. Microphone capture is paused until speech ends; use Stop speaking to interrupt.`
+                    : followUpListening
+                      ? transcript || 'Listening for your reply now. No wake phrase is needed for twelve seconds; say cancel or stop the voice session to exit.'
+                      : wakeHeard
+                        ? transcript || 'Wake phrase heard. Say one command within ten seconds.'
+                        : wakeActive
+                          ? transcript || `Listening for ${settings.wake_word}. Say a phrase alone, then a command, or say both together.`
+                          : wakeEnabled
+                            ? 'Voice session is paused while your command is processed and will resume after speech.'
+                            : recognitionSupported
+                              ? 'Microphone stays off until you choose Speak or Enable wake phrases. Recognition is not speaker identification and may use a vendor speech service.'
+                              : 'Voice input is unavailable in this browser. Text commands remain fully functional.')}
               </div>
 
               <div className="quick-commands">
@@ -858,7 +912,7 @@ export default function Home() {
                   {result.intent === 'assistant.chat' && (
                     <div className="result-source">
                       {result.provider === 'ollama'
-                        ? `OLLAMA INFERENCE · ${result.model} · ${result.memory_count ?? 0} APPROVED MEMORIES IN CONTEXT`
+                        ? `OLLAMA STREAM · ${result.model} · ${result.memory_count ?? 0} APPROVED MEMORIES${result.timing?.first_token_ms ? ` · FIRST TOKEN ${Math.round(result.timing.first_token_ms)} MS` : ''}${result.timing ? ` · TOTAL ${Math.round(result.timing.total_ms)} MS` : ''}`
                         : 'NO MODEL RESPONSE · NO ACTION EXECUTED'}
                     </div>
                   )}
@@ -866,7 +920,7 @@ export default function Home() {
                   {Boolean(result.directories?.length) && (
                     <div className="result-directory-choices">
                       {result.directories?.map((directory) => (
-                        <button key={directory.path} onClick={() => void executeCommand(`Open folder ${directory.path} in VS Code`)} disabled={busy}>
+                        <button key={directory.path} onClick={() => void executeCommand(`Open folder ${directory.path} in ${result.follow_up?.application === 'files' ? 'File Manager' : 'VS Code'}`)} disabled={busy}>
                           <FolderSearch size={14} /><span><strong>{directory.name}</strong><small>{directory.path}</small></span>
                         </button>
                       ))}
