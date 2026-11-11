@@ -17,7 +17,7 @@
 - The model receives the configured assistant name, bounded recent conversation text and explicitly approved typed memories. Do not store passwords, access tokens or secrets in any of them.
 - Conversation history and memory are untrusted reference data, not instructions that can override policy. Model output is also untrusted data.
 - The Ollama client exposes text generation only. It has no tool definitions, connector credentials, shell access or action executor. Model text cannot create/approve requests, execute browser/terminal/device actions, alter settings or change audit policy.
-- The provider URL comes from local environment configuration; model output cannot select a URL. Requests use bounded timeouts, non-streaming responses, generation limits and response-size limits.
+- The provider URL comes from local environment configuration; model output cannot select a URL. Requests use bounded timeouts, generation limits, a two-megabyte streaming budget and response-size limits. Streaming changes display timing only; it does not give model text an execution path.
 - The default route is a local Ollama service and needs no API key. No cloud provider is connected. Any later cloud route requires explicit configuration, secret storage outside Git/model context and clear disclosure that data leaves the local machine.
 
 ## Persistent memory and conversation data
@@ -77,10 +77,11 @@
 
 ## Voice and microphone
 
-- Microphone recognition starts only after an explicit Speak press or an explicit Enable wake word action. The wake session is opt-in, visibly active, limited to the open browser console and never restored automatically after reload.
-- Wake phrases are matched only at the beginning of a transcript, optionally after `hey`, `ok` or `okay`. Wake alone arms one follow-up for eight seconds; wake plus command submits that command through the normal path.
-- A visible listening state and Stop control are provided. Capture pauses during command processing and spoken responses; fatal recognition errors disable the session. Nexus does not save microphone audio or transcripts as audio files.
-- A final transcript is treated exactly like typed input: it cannot bypass intent validation, approval policy or audit history. Recognised command text and responses are included in the local timeline.
+- Microphone recognition starts only after an explicit Speak press or an explicit Enable wake phrases action. The wake session is opt-in, visibly active, limited to the open browser console and never restored automatically after reload.
+- Up to eight configured phrases are matched only at the beginning of a transcript, optionally after `hey`, `ok` or `okay`. Nexus recognition aliases and one-edit matching are tightly bounded to reduce false activation. Wake alone arms one command for ten seconds; wake plus command submits through the normal path.
+- A deterministic folder question or a completed model answer ending in a question can open one twelve-second reply window only inside the already enabled wake session. It opens only after speech actually ends, and never after reload or while Nexus is speaking. Recognition is stopped during processing and speech, and each recognition instance can dispatch at most once.
+- Follow-up timeout, cancellation, Stop speaking and Stop voice session are defined transitions. Folder replies can select only returned directory metadata or create a new bounded folder query; they still pass exact-path resolution and create a fresh single-use launch approval. Voice follow-up never authorises an action.
+- A final transcript is treated exactly like typed input: it cannot bypass intent validation, approval policy or audit history. Recognised command text and responses are included in the local timeline. Fatal recognition errors disable the session. Nexus does not save microphone audio or transcripts as audio files.
 - Browser speech recognition may use a browser/vendor speech service and may require network access. Nexus does not claim that this phase is fully offline. Use text when network recognition is not acceptable.
 - Spoken responses use the browser/operating system's available speech synthesizer. Availability and voice selection vary.
 - Browser speech recognition recognises words, not speaker identity. No voice-profile recognition or authentication is active. Voice alone must never unlock a device or authorise a sensitive action.
