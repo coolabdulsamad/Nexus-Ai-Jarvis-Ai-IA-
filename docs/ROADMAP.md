@@ -86,10 +86,20 @@ This phase does not provide speaker identification, persistent background/offlin
 
 Future screen work must add visible capture consent, exact monitor/window scope, honest visual results, target confirmation and separate audited approval for each input action. Speaker profiles may become a convenience feature only; they must never become sole authorisation for sensitive actions.
 
-## Phase 09 — genuine device and home connectors
+## Phase 09 — streaming responsiveness and conversational voice (delivered)
+
+- Added server-sent model-token streaming through the same validated command orchestrator, with one persisted final result and measured first-token/total timings. Kept the non-streaming compatibility endpoint, expanded readiness reuse to 60 seconds and model keep-alive to thirty minutes, and reduced post-command refreshes from eleven API requests to four.
+- Replaced loosely connected wake flags with one visible voice lifecycle covering wake listening, wake-alone command capture, processing, speaking and bounded post-question reply capture. Recognition is excluded throughout processing and speech, resumes from actual synthesis completion, and prevents duplicate dispatch per recognition instance.
+- Added up to eight editable wake phrases, independent `hey` activation, selectable `en-NG`/`en-US`/`en-GB` recognition locales, and tightly bounded Nexus aliases including `nextus`, `nexis` and `next to`.
+- Added deterministic folder clarification: `Open a folder` asks which folder, listens after the spoken question without another wake phrase, supports exact/ordinal ambiguous choices and cancellation, and still requires exact-path approval before launch.
+- Added bounded twelve-second post-question listening for completed model answers ending in a question while the explicit wake session remains enabled. Text fallback, Stop speaking and Stop voice session remain available.
+
+This phase does not provide speaker identification or an “only my voice” security mode. Browser speech recognition identifies words rather than speakers and may use a vendor network service. A future consented local speaker-profile filter must be separately enrolled, revocable and honestly described as fallible and replay-susceptible; it must never replace authentication or action approvals. Persistent offline/background wake listening, screen capture/clicking, mobile tracking/control, home/AC connectivity, autonomous learning, training and self-modification remain unavailable.
+
+## Phase 10 — genuine device and home connectors
 
 Implement platform-authorised Android/iPhone companion pairing and explicitly scoped actions, followed by one configured home connector with exact device selection and verified outcomes. Add IP/CCTV, ESP32-CAM and ESP32 sensor connectors separately with consent, authentication, retention and audit controls. Registration records must not be presented as real connections.
 
-## Phase 10 — reviewed adaptive capabilities and expanded automation
+## Phase 11 — reviewed adaptive capabilities and expanded automation
 
 Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → human review → signing/versioning → monitoring and rollback. Raw pages, documents, transcripts and model output remain untrusted data. Browser exact-target clicking, scoped coding automation, Git operations and deployment each require their own permission boundaries and tests before activation. Fine-tuning, if deliberately added later, is a separate reviewed dataset/training/evaluation workflow—not a side effect of chat.
