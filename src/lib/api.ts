@@ -59,6 +59,46 @@ export const nexusApi = {
     request<AssistantSettings>('/api/settings', { method: 'POST', body: JSON.stringify(settings) }),
   command: (text: string) =>
     request<CommandResult>('/api/commands', { method: 'POST', body: JSON.stringify({ text }) }),
+  commandStream: async (text: string, onToken: (token: string) => void): Promise<CommandResult> => {
+    const response = await fetch(`${API_BASE}/api/commands/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({ text }),
+    })
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { detail?: string } | null
+      throw new Error(body?.detail ?? `Nexus core returned ${response.status}.`)
+    }
+    if (!response.body) throw new Error('This browser cannot stream the Nexus response. Reload and try again.')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let finalResult: CommandResult | null = null
+    let streamError = ''
+
+    const consume = (block: string) => {
+      const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim()).join('\n')
+      if (!data) return
+      const event = JSON.parse(data) as { type?: string; text?: string; message?: string } & CommandResult
+      if (event.type === 'token' && event.text) onToken(event.text)
+      if (event.type === 'error') streamError = event.message ?? 'The command could not be completed.'
+      if (event.type === 'result') finalResult = event as CommandResult
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() ?? ''
+      blocks.forEach(consume)
+      if (done) break
+    }
+    if (buffer.trim()) consume(buffer)
+    if (streamError) throw new Error(streamError)
+    if (!finalResult) throw new Error('Nexus ended the response without a result. No action was authorised.')
+    return finalResult
+  },
   approve: (id: string, clientBrowser = false) => request<ApprovalResult>(`/api/approvals/${id}/approve`, {
     method: 'POST',
     body: JSON.stringify({ client_browser: clientBrowser }),

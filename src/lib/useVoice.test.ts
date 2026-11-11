@@ -32,4 +32,22 @@ describe('wake-word command extraction', () => {
       command: 'what is the time',
     })
   })
+
+  it('accepts bounded Nigerian-accent recognition variants for Nexus', () => {
+    expect(extractWakeCommand('Nextus, open a folder', 'Nexus')).toEqual({ matched: true, command: 'open a folder' })
+    expect(extractWakeCommand('Next to, what time is it', 'Nexus')).toEqual({ matched: true, command: 'what time is it' })
+    expect(extractWakeCommand('Nexis system status', 'Nexus')).toEqual({ matched: true, command: 'system status' })
+  })
+
+  it('supports independent multiple wake phrases including hey', () => {
+    expect(extractWakeCommand('Hey, open a folder', 'Nexus, Hey')).toEqual({ matched: true, command: 'open a folder' })
+    expect(extractWakeCommand('Hey Nexus what time is it', 'Nexus, Hey')).toEqual({ matched: true, command: 'what time is it' })
+    expect(extractWakeCommand('Computer system status', 'Nexus, Hey, Computer')).toEqual({ matched: true, command: 'system status' })
+  })
+
+  it('does not broadly fuzzy-match unrelated speech', () => {
+    expect(extractWakeCommand('next please', 'Nexus').matched).toBe(false)
+    expect(extractWakeCommand('help me', 'Hey').matched).toBe(false)
+    expect(extractWakeCommand('the next to last item', 'Nexus').matched).toBe(false)
+  })
 })

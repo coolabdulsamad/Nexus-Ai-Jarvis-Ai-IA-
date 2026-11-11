@@ -16,6 +16,7 @@ export interface AssistantSettings {
   model_enabled: boolean
   model_name: string
   wake_word: string
+  speech_locale: 'en-NG' | 'en-US' | 'en-GB'
 }
 
 export type AssistantSettingsUpdate = Partial<AssistantSettings>
@@ -191,6 +192,14 @@ export interface CommandResult {
   model?: string
   memory_count?: number
   directories?: DirectoryEntry[]
+  follow_up?: {
+    kind: 'system.folder'
+    application: 'vscode' | 'files'
+  }
+  timing?: {
+    total_ms: number
+    first_token_ms?: number
+  }
 }
 
 export interface ApprovalResult extends Approval {
