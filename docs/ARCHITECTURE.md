@@ -3,9 +3,9 @@
 ## Request path
 
 1. The React console accepts typed text, a final push-to-talk transcript, or a command extracted from an explicitly enabled wake-word session.
-2. All command inputs send the same request to `POST /api/commands`.
+2. All command inputs use `POST /api/commands/stream`; the non-streaming `POST /api/commands` remains as a compatibility API. Both enter the same orchestrator and approval policy.
 3. The orchestrator first classifies the explicit action/status intents and constructs typed payloads. Known connector boundaries remain deterministic.
-4. A message outside those intents becomes `assistant.chat`. The Ollama provider reuses a short-lived readiness cache, builds a bounded identity/history/approved-memory prompt and calls non-streaming `POST /api/chat` with a ten-minute `keep_alive`. It returns generated text only; it has no tool or action executor.
+4. A message outside those intents becomes `assistant.chat`. The Ollama provider reuses a short-lived readiness cache, builds a bounded identity/history/approved-memory prompt and calls `POST /api/chat` with a thirty-minute `keep_alive`. The streaming route forwards generated text tokens as server-sent events, then emits one final result with measured first-token and total timings. It returns generated text only; it has no tool or action executor.
 5. Read-only local status/time/list intents complete immediately. If Ollama is offline, disabled or missing the selected model, model chat returns an honest `unavailable`, `model_missing` or disabled response without affecting fixed commands.
 6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview and fixed app/folder launches create a pending approval and an audit event, regardless of whether the request was typed or spoken.
 7. The user approves or rejects the exact action payload in the console.
@@ -20,12 +20,13 @@
 - `src/components/NexusGlobe.tsx`: deterministic particle world, atmospheric layers, graticules, network arcs, packets, satellites and interactive camera controls.
 - `src/components/NexusHumanoid.tsx`: original particle humanoid with contoured face, separate jaw, neck/torso, blinking, head motion and speech/viseme-driven mouth movement.
 - `src/components/SceneZoomControls.tsx`: shared accessible zoom-in, zoom-out and reset actions; each Three.js scene owns its camera.
-- `src/lib/useVoice.ts`: explicit push-to-talk and opt-in continuous wake-word recognition sessions, guarded restart, speech-time capture pause, spoken responses and interruption. No audio is stored by Nexus.
+- `src/lib/useVoice.ts`: one explicit voice state machine covering idle, push listening, wake listening, wake follow-up, processing, speaking and post-question follow-up listening. It owns guarded restarts, bounded timers, speech-time capture exclusion, duplicate-dispatch prevention, multiple wake phrases, bounded Nexus recognition aliases, spoken responses and interruption. No audio is stored by Nexus.
+- `src/lib/conversation.ts`: typed follow-up metadata and deterministic folder-reply mapping. Model questions can open a bounded listening window but cannot create actions; folder replies return to the normal command parser.
 - `src/components/SystemControl.tsx`: bounded directory search, exact-path launch requests, fixed application detection and explicit inactive screen status.
 - `src/lib/camera.ts`: the only browser webcam request helper; it fixes video to the user-facing camera, sets `audio: false` and stops every track on cleanup.
 - `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions and browser-tab handoff.
 - `backend/main.py`: FastAPI routes, validation, model-status endpoint and production static hosting.
-- `backend/ollama.py`: local Ollama model detection, short-lived readiness caching, non-streaming inference, model keep-alive, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
+- `backend/ollama.py`: local Ollama model detection, short-lived readiness caching, bounded non-streaming and NDJSON streaming inference, model keep-alive, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
 - `backend/commands.py`: explicit intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction, bounded folder-request resolution and connector boundaries.
 - `backend/connectors.py`: approval-time payload revalidation, client-browser confirmation or local browser fallback, fixed-argument Git-status execution, and fixed local application/folder launches.
 - `backend/system.py`: bounded local directory discovery, configured-root validation, fixed application detection, shell-free argument lists and explicit inactive screen status.
@@ -36,7 +37,7 @@
 
 `GET /api/assistant/status` checks Ollama separately from the Nexus API. It reports `ready`, `model_missing`, `unavailable` or `disabled`, the selected model and a bounded installed-model list. A healthy FastAPI core therefore does not imply that an AI model is ready.
 
-The default model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, non-streaming responses, generation limits and bounded response text.
+The default model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, generation limits, a two-megabyte streamed-response budget and bounded response text. The console displays tokens incrementally but speaks only the completed response so synthesis and recognition cannot overlap.
 
 The system prompt supplies the configured assistant name and explicit truthfulness/action boundaries. Up to four recent completed exchanges and six approved memories are included with per-item limits. Memories and history are labelled untrusted data. No embedding retrieval, model training, fine-tuning, weight update or autonomous self-modification occurs.
 
@@ -72,9 +73,13 @@ There is no backend webcam connector, frame-upload route, snapshot operation, re
 
 ## Voice and avatar contract
 
-Microphone recognition starts only after the user presses Speak or explicitly enables the wake-word session. Push-to-talk is one bounded interaction. The opt-in wake session uses the browser's continuous recognition mode while the console is open, displays its state and provides a Stop control; activation is never restored automatically after a reload.
+Microphone recognition starts only after the user presses Speak or explicitly enables the wake session. Push-to-talk is one bounded interaction. The opt-in wake session uses the browser's continuous recognition mode while the console is open, displays an authoritative lifecycle state and provides a Stop control; activation is never restored automatically after a reload.
 
-The wake phrase must occur at the beginning of a transcript, optionally after `hey`, `ok` or `okay`. A phrase followed by a command enters the normal command path immediately. The phrase alone arms one follow-up command for eight seconds. Recognition pauses while a command is being processed or a response is spoken, then uses a guarded restart. Fatal permission, network or audio errors disable the session instead of retrying indefinitely. Nexus stores no microphone audio.
+Up to eight comma-separated phrases are supported. Matching occurs only at the beginning, optionally after `hey`, `ok` or `okay`; an independently configured `hey` phrase also works alone. `Nexus` has explicit recognition aliases including `nextus`, `nexis`, `next to` and close variants, plus a one-edit bounded match for sufficiently long custom single words. There is no unrestricted fuzzy activation. `en-NG`, `en-US` and `en-GB` recognition locales are selectable, subject to browser/vendor support.
+
+A phrase followed by a command enters the normal path immediately. The phrase alone arms one command for ten seconds. A deterministic folder clarification or completed model answer ending in a question can request one twelve-second post-speech reply window while the wake session remains enabled. Recognition is aborted before processing and speech, and restarts only from the synthesis end/error callback or the no-speech path. A speech-generation guard prevents cancelled utterance callbacks from opening the microphone. Every recognition instance has a one-dispatch guard. Follow-up timeout, Stop speaking and Stop voice session all return to a defined state without submitting audio.
+
+For folder clarification, typed `follow_up` metadata retains only the fixed application and currently returned bounded directory choices. A reply can select an exact path, unique name, number or ordinal, or become a new folder query. Cancellation opens nothing. The resulting text re-enters deterministic directory resolution and must produce a fresh exact-path approval before launch.
 
 A final transcript is treated exactly like typed input. Browser speech recognition recognises words, not the speaker's identity, and may use a browser/vendor network service. Speech boundary events select a viseme, while the avatar render loop produces visible mouth and jaw movement for the active utterance. Cancelling synthesis returns the avatar to its resting mouth position.
 
