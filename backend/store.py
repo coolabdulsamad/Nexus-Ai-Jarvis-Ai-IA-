@@ -32,7 +32,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "avatar_mode": "globe",
     "model_enabled": True,
     "model_name": "qwen2.5:3b",
-    "wake_word": "Nexus",
+    "wake_word": "Nexus, Hey",
+    "speech_locale": "en-NG",
 }
 
 DEVICE_PLATFORMS: dict[str, dict[str, Any]] = {

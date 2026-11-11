@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlencode
 
 from .connectors import validated_browser_url
@@ -202,6 +202,17 @@ def _browser_request(text: str) -> tuple[str, dict[str, Any]] | None:
 
 def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
     app_names = r"(?:vs\s*code|visual\s+studio\s+code|vscode|file\s+manager|files)"
+    incomplete_folder = re.match(
+        rf"^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?(?:a\s+)?(?:folder|directory)"
+        rf"(?:\s+(?:in|with|using)\s+({app_names}))?$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if incomplete_folder:
+        app_name = (incomplete_folder.group(1) or "vscode").lower()
+        application = "files" if app_name in {"files", "file manager"} else "vscode"
+        return "system.clarify_folder", {"application": application}
+
     folder_patterns = [
         rf"^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?(?:folder|directory)\s+(.+?)(?:\s+(?:in|with|using)\s+({app_names}))?$",
         rf"^(?:please\s+)?(?:open|launch)\s+(.+?)\s+(?:in|with|using)\s+({app_names})$",
@@ -242,7 +253,12 @@ def _approval_command(
     return {**base, "status": "approval_required", "message": message, "approval": approval}
 
 
-def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = None) -> dict[str, Any]:
+def handle_command(
+    text: str,
+    store: Store,
+    assistant: OllamaAssistant | None = None,
+    on_token: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
     normalized = " ".join(text.strip().split())
     lowered = normalized.lower().rstrip("?!")
     note_content = _note_content(normalized)
@@ -305,8 +321,20 @@ def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = 
     command_id = store.create_command(normalized, intent)
     base: dict[str, Any] = {"command_id": command_id, "intent": intent}
 
+    if intent == "system.clarify_folder" and system_request:
+        application = system_request[1]["application"]
+        label = APPLICATIONS[application]["label"]
+        message = f"Which folder would you like to open with {label}?"
+        store.finish_command(command_id, "completed", message)
+        return {
+            **base,
+            "status": "completed",
+            "message": message,
+            "follow_up": {"kind": "system.folder", "application": application},
+        }
+
     if intent == "assistant.chat" and assistant:
-        reply = assistant.respond(store, normalized, command_id)
+        reply = assistant.respond(store, normalized, command_id, on_token=on_token)
         store.finish_command(command_id, reply["status"], reply["message"])
         return {**base, **reply}
 
@@ -373,12 +401,18 @@ def handle_command(text: str, store: Store, assistant: OllamaAssistant | None = 
         if resolved["state"] != "found":
             message = resolved.get("message") or "No unique folder was resolved. Nothing was opened."
             store.finish_command(command_id, "unavailable", message)
-            return {
+            result = {
                 **base,
                 "status": "unavailable",
                 "message": message,
                 "directories": resolved["directories"],
             }
+            if resolved["state"] == "ambiguous":
+                result["follow_up"] = {
+                    "kind": "system.folder",
+                    "application": request_payload["application"],
+                }
+            return result
         directory = resolved["directory"]
         application = request_payload["application"]
         label = APPLICATIONS[application]["label"]
