@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import shutil
 import subprocess
@@ -8,6 +9,8 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+
+from .ollama import OllamaError
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MAX_COMMAND_OUTPUT = 5000
@@ -134,10 +137,128 @@ def git_status(_payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def inspect_screen(payload: dict[str, Any], assistant: Any = None, store: Any = None) -> dict[str, Any]:
+    from .screen import ScreenError, capture_monitor
+
+    try:
+        capture = capture_monitor(payload.get("monitor_id"))
+    except ScreenError as error:
+        return {"status": "unavailable", "message": str(error), "output": None}
+    monitor = capture["monitor"]
+    target = payload.get("target")
+    question = str(payload.get("question") or "Describe what is visibly happening on this monitor.")[:500]
+    if assistant is None or store is None:
+        return {
+            "status": "unavailable",
+            "message": "The snapshot was captured, but no vision connector is configured. No image was stored and nothing was clicked.",
+            "output": None,
+        }
+    try:
+        analysis = assistant.inspect_screen(
+            store=store,
+            image_base64=capture["image_base64"],
+            image_width=capture["image_width"],
+            image_height=capture["image_height"],
+            question=question,
+            target=target,
+        )
+    except OllamaError as error:
+        screen = {
+            "image_data_url": "data:image/png;base64," + capture["image_base64"],
+            "monitor": monitor,
+            "target": target,
+            "description": "Visual analysis unavailable.",
+        }
+        return {
+            "status": "unavailable",
+            "message": f"The approved snapshot was captured for this response, but visual analysis failed: {error} No image was stored and nothing was clicked.",
+            "output": None,
+            "screen": screen,
+        }
+
+    if not target:
+        return {
+            "status": "completed",
+            "message": analysis["description"],
+            "output": None,
+            "screen": {
+                "image_data_url": "data:image/png;base64," + capture["image_base64"],
+                "monitor": monitor,
+                "description": analysis["description"],
+                "model": analysis["model"],
+            },
+        }
+
+    location = analysis["location"]
+    found = location.get("found") is True
+    x = location.get("x")
+    y = location.get("y")
+    confidence = location.get("confidence")
+    valid_coordinates = (
+        all(isinstance(value, int) and not isinstance(value, bool) for value in (x, y))
+        and 0 <= x < capture["image_width"]
+        and 0 <= y < capture["image_height"]
+    )
+    valid_confidence = (
+        isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and math.isfinite(confidence)
+        and 0 <= confidence <= 1
+    )
+    description = str(location.get("description") or "No visual evidence supplied.")[:1000]
+    screen = {
+        "image_data_url": "data:image/png;base64," + capture["image_base64"],
+        "monitor": monitor,
+        "target": str(target)[:160],
+        "description": description,
+        "model": analysis["model"],
+    }
+    if not found or not valid_coordinates or not valid_confidence or confidence < 0.55:
+        return {
+            "status": "unavailable",
+            "message": f"Nexus could not locate {target!r} confidently on monitor {monitor['id']}. Nothing was clicked. {description}",
+            "output": None,
+            "screen": screen,
+        }
+
+    global_x = monitor["left"] + round(x * monitor["width"] / capture["image_width"])
+    global_y = monitor["top"] + round(y * monitor["height"] / capture["image_height"])
+    screen.update(x=global_x, y=global_y, confidence=round(float(confidence), 2))
+    return {
+        "status": "completed",
+        "message": (
+            f"Possible {target!r} target proposed at global coordinates ({global_x}, {global_y}) on monitor {monitor['id']}. "
+            "Review the snapshot and exact coordinates, then request a separate click approval. Nothing was clicked."
+        ),
+        "output": None,
+        "screen": screen,
+    }
+
+
+def click_screen(payload: dict[str, Any]) -> dict[str, Any]:
+    from .screen import ScreenError, click_monitor
+
+    try:
+        clicked = click_monitor(payload.get("monitor_id"), payload.get("x"), payload.get("y"))
+    except ScreenError as error:
+        return {"status": "failed", "message": str(error), "output": None}
+    target = str(payload.get("target") or "approved target")[:160]
+    return {
+        "status": "completed",
+        "message": (
+            f"One approved left click was sent for {target!r} at ({clicked['x']}, {clicked['y']}) "
+            f"on monitor {clicked['monitor']['id']}. No keyboard input or additional click was sent."
+        ),
+        "output": None,
+    }
+
+
 def execute_approved_action(
     action: str,
     payload: dict[str, Any],
     client_browser: bool = False,
+    assistant: Any = None,
+    store: Any = None,
 ) -> dict[str, Any]:
     if action in {"browser.navigate", "browser.search"}:
         return open_browser(payload, client_browser=client_browser)
@@ -151,6 +272,10 @@ def execute_approved_action(
         from .system import open_folder
 
         return open_folder(payload)
+    if action in {"screen.capture", "screen.locate"}:
+        return inspect_screen(payload, assistant=assistant, store=store)
+    if action == "screen.click":
+        return click_screen(payload)
     return {
         "status": "failed",
         "message": "This approval action is not recognized. Nothing was executed.",

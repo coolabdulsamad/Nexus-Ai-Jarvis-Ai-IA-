@@ -24,6 +24,11 @@ APPLICATIONS: dict[str, dict[str, Any]] = {
         "executables": (),
         "description": "Open the platform file manager at Home or a validated folder.",
     },
+    "wps": {
+        "label": "WPS Office",
+        "executables": ("wps.exe", "wps"),
+        "description": "Launch WPS Office after approval. Folder opening remains with VS Code or the file manager.",
+    },
 }
 
 
@@ -153,7 +158,7 @@ def resolve_directory_request(query: str) -> dict[str, Any]:
 
 
 def _application_executable(app_id: str) -> str | None:
-    if app_id == "vscode":
+    if app_id in {"vscode", "wps"}:
         for candidate in APPLICATIONS[app_id]["executables"]:
             executable = shutil.which(candidate)
             if executable:
@@ -181,6 +186,8 @@ def application_status() -> list[dict[str, Any]]:
 
 
 def system_status() -> dict[str, Any]:
+    from .screen import screen_status
+
     return {
         "roots": [str(root) for root in configured_roots()],
         "discovery": {
@@ -191,13 +198,7 @@ def system_status() -> dict[str, Any]:
             "file_contents_read": False,
         },
         "applications": application_status(),
-        "screen_awareness": {
-            "state": "not_configured",
-            "capture_active": False,
-            "monitors_visible": 0,
-            "clicking_enabled": False,
-            "detail": "No screen capture, monitor inventory, visual understanding or clicking connector is active.",
-        },
+        "screen_awareness": screen_status(),
     }
 
 
@@ -222,7 +223,7 @@ def launch_application(payload: dict[str, Any]) -> dict[str, Any]:
             "message": f"{APPLICATIONS[app_id]['label']} is not available on this system's PATH. Nothing was launched.",
             "output": None,
         }
-    command = [executable, "--new-window"] if app_id == "vscode" else [executable, str(Path.home())]
+    command = [executable, "--new-window"] if app_id == "vscode" else [executable, str(Path.home())] if app_id == "files" else [executable]
     try:
         _launch(command)
     except OSError as error:
@@ -238,6 +239,8 @@ def open_folder(payload: dict[str, Any]) -> dict[str, Any]:
     app_id = payload.get("application", "vscode")
     if app_id not in APPLICATIONS:
         return {"status": "failed", "message": "The approved folder application is not allowed.", "output": None}
+    if app_id == "wps":
+        return {"status": "unsupported", "message": "WPS Office opens documents, not folders. Choose VS Code or the file manager; nothing was opened.", "output": None}
     try:
         directory = validated_directory(payload.get("path"))
     except ValueError as error:
