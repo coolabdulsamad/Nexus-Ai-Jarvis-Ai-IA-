@@ -66,11 +66,16 @@ const quickCommands = [
   'Who are you?',
   'Explain quantum computing in simple terms',
   'What time is it?',
+  'What is today’s date?',
   'System status',
   'Take a note: review the camera connector plan',
   'Remember preference: I prefer concise answers',
   'Search Google for local AI safety',
   'Open VS Code',
+  'Open WPS Office',
+  'Show monitors',
+  'What am I doing in my first monitor?',
+  'Click the play button in my second monitor',
   'Open a folder',
   'Open folder Documents in VS Code',
   'Show devices',
@@ -87,6 +92,7 @@ const defaultSettings: AssistantSettings = {
   avatar_mode: 'globe',
   model_enabled: true,
   model_name: 'qwen2.5:3b',
+  vision_model_name: 'llava:7b',
   wake_word: 'Nexus, Hey',
   speech_locale: 'en-NG',
 }
@@ -176,8 +182,29 @@ function approvalDetails(approval: Approval) {
       pendingLabel: 'Approving…',
     }
   }
+  if (approval.action === 'screen.capture' || approval.action === 'screen.locate') {
+    const locating = approval.action === 'screen.locate'
+    return {
+      label: locating ? 'SCREEN / LOCATE TARGET' : 'SCREEN / ONE SNAPSHOT',
+      summary: locating
+        ? `Capture monitor ${approval.payload.monitor_id} once and locate ${approval.payload.target ?? 'the requested target'}`
+        : `Capture monitor ${approval.payload.monitor_id} once and describe visible activity`,
+      payload: 'One-shot PNG · Local vision inference · No frame storage · No click authorised',
+      warning: 'The snapshot may contain sensitive visible information. It is used for this response only. Any target location is only a proposal and cannot click by itself.',
+      pendingLabel: 'Inspecting…',
+    }
+  }
+  if (approval.action === 'screen.click') {
+    return {
+      label: 'SCREEN / ONE LEFT CLICK',
+      summary: `Click ${approval.payload.target ?? 'approved target'} on monitor ${approval.payload.monitor_id}`,
+      payload: `Global X ${approval.payload.x} · Y ${approval.payload.y} · One left click · No keyboard input`,
+      warning: 'Revalidates the current monitor bounds, moves the visible pointer and sends exactly one left click. Screen content may have changed since inspection.',
+      pendingLabel: 'Clicking…',
+    }
+  }
   if (approval.action === 'system.open_application') {
-    const application = approval.payload.application === 'files' ? 'File manager' : 'VS Code'
+    const application = approval.payload.application === 'files' ? 'File manager' : approval.payload.application === 'wps' ? 'WPS Office' : 'VS Code'
     return {
       label: 'SYSTEM / OPEN APPLICATION',
       summary: `Open ${application}`,
@@ -187,7 +214,7 @@ function approvalDetails(approval: Approval) {
     }
   }
   if (approval.action === 'system.open_folder') {
-    const application = approval.payload.application === 'files' ? 'File manager' : 'VS Code'
+    const application = approval.payload.application === 'files' ? 'File manager' : approval.payload.application === 'wps' ? 'WPS Office' : 'VS Code'
     return {
       label: 'SYSTEM / OPEN FOLDER',
       summary: `Open ${approval.payload.name ?? 'approved folder'} with ${application}`,
@@ -662,6 +689,7 @@ export default function Home() {
         status: outcome.command_status,
         message: outcome.message,
         output: outcome.output,
+        screen: outcome.screen,
       })
       if (outcome.memory) setMemoryView('typed')
       pendingFollowUpRef.current = null
@@ -736,7 +764,7 @@ export default function Home() {
             <KeyRound size={15} />
             <span>Local only<br />No open ports</span>
           </div>
-          <span className="build-number">LOCAL CORE / 0.9.0</span>
+          <span className="build-number">LOCAL CORE / 0.10.0</span>
         </div>
       </aside>
 
@@ -749,7 +777,7 @@ export default function Home() {
               <Menu size={20} />
             </button>
             <BrandMark small />
-            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 09</span>
+            <span className="breadcrumb">PERSONAL INTELLIGENCE <ChevronRight size={13} /> CORE 10</span>
           </div>
           <div className="topbar-right">
             <span className="core-time">{health ? formatTimestamp(health.time) : 'CORE OFFLINE'}</span>
@@ -777,7 +805,7 @@ export default function Home() {
                   <span className="eyebrow yellow">{settings.assistant_name.toUpperCase()} / LOCAL INTELLIGENCE</span>
                   <h1>Your world.<br /><span>Under your command.</span></h1>
                 </div>
-                <span className="phase-badge">PHASE 09</span>
+                <span className="phase-badge">PHASE 10</span>
               </div>
               <div className="avatar-switch" role="group" aria-label="Visual assistant mode">
                 <button
@@ -925,6 +953,22 @@ export default function Home() {
                     </div>
                   )}
                   <p>{result.message}</p>
+                  {result.screen && (
+                    <div className="screen-inspection-result">
+                      <img src={result.screen.image_data_url} alt={`Approved one-shot snapshot of monitor ${result.screen.monitor.id}`} />
+                      <div className="screen-inspection-meta">
+                        <span>MONITOR {result.screen.monitor.id} · ONE-SHOT · NOT STORED</span>
+                        {typeof result.screen.x === 'number' && typeof result.screen.y === 'number' && result.screen.target && (
+                          <button
+                            onClick={() => void executeCommand(`Confirm click on monitor ${result.screen!.monitor.id} at ${result.screen!.x}, ${result.screen!.y} for ${result.screen!.target}`)}
+                            disabled={busy}
+                          >
+                            Request click approval at ({result.screen.x}, {result.screen.y})
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   {Boolean(result.directories?.length) && (
                     <div className="result-directory-choices">
                       {result.directories?.map((directory) => (
