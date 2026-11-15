@@ -32,6 +32,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "avatar_mode": "globe",
     "model_enabled": True,
     "model_name": "qwen2.5:3b",
+    "vision_model_name": "llava:7b",
     "wake_word": "Nexus, Hey",
     "speech_locale": "en-NG",
 }
@@ -294,6 +295,7 @@ class Store:
             memory = None
             device = None
             camera_session = None
+            screen = None
             output = None
             payload = json.loads(row["payload"])
             if decision == "approved" and row["action"] == "note.create":
@@ -373,6 +375,7 @@ class Store:
                 response = str(action_result["message"])
                 command_status = str(action_result["status"])
                 output = action_result.get("output")
+                screen = action_result.get("screen")
             else:
                 if row["action"] in {"note.create", "memory.create"}:
                     response = "Request rejected; nothing was saved."
@@ -382,6 +385,10 @@ class Store:
                     response = "Request rejected; camera access was not requested and no preview started."
                 elif row["action"] in {"system.open_application", "system.open_folder"}:
                     response = "Request rejected; no application or folder was opened."
+                elif row["action"] in {"screen.capture", "screen.locate"}:
+                    response = "Request rejected; no screen was captured or analysed and nothing was clicked."
+                elif row["action"] == "screen.click":
+                    response = "Request rejected; no mouse movement or click was sent."
                 else:
                     response = "Request rejected; no browser or terminal action was taken."
                 command_status = "rejected"
@@ -402,6 +409,7 @@ class Store:
             result["memory"] = memory
             result["device"] = device
             result["camera_session"] = camera_session
+            result["screen"] = screen
             result["message"] = response
             result["output"] = output
             result["command_status"] = command_status

@@ -47,6 +47,7 @@ class SettingsUpdate(BaseModel):
     avatar_mode: Literal["globe", "humanoid"] | None = None
     model_enabled: bool | None = None
     model_name: str | None = Field(default=None, min_length=1, max_length=100)
+    vision_model_name: str | None = Field(default=None, min_length=1, max_length=100)
     wake_word: str | None = Field(default=None, min_length=2, max_length=240)
     speech_locale: Literal["en-NG", "en-US", "en-GB"] | None = None
 
@@ -166,11 +167,12 @@ def create_app() -> FastAPI:
             if not name:
                 raise HTTPException(status_code=422, detail="Assistant name cannot be blank.")
             updates["assistant_name"] = name
-        if "model_name" in updates:
-            model_name = updates["model_name"].strip()
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", model_name):
-                raise HTTPException(status_code=422, detail="Enter a valid Ollama model name, such as qwen2.5:3b.")
-            updates["model_name"] = model_name
+        for key in ("model_name", "vision_model_name"):
+            if key in updates:
+                model_name = updates[key].strip()
+                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}", model_name):
+                    raise HTTPException(status_code=422, detail="Enter a valid Ollama model name, such as qwen2.5:3b or llava:7b.")
+                updates[key] = model_name
         if "wake_word" in updates:
             phrases = [phrase.strip() for phrase in re.split(r"[,\n]", updates["wake_word"]) if phrase.strip()]
             if not 1 <= len(phrases) <= 8 or any(
@@ -246,6 +248,8 @@ def create_app() -> FastAPI:
         executor = partial(
             execute_approved_action,
             client_browser=bool(payload and payload.client_browser),
+            assistant=assistant(request),
+            store=store(request),
         )
         try:
             return store(request).resolve_approval(approval_id, "approved", executor)
