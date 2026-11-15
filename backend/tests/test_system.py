@@ -147,15 +147,39 @@ def test_application_catalog_is_fixed_and_rejection_launches_nothing(monkeypatch
 
 
 def test_system_status_does_not_simulate_screen_awareness(monkeypatch, tmp_path):
+    monkeypatch.setenv("NEXUS_SCREEN_DISABLED", "1")
     api, root = make_client(monkeypatch, tmp_path)
     with api:
         status = api.get("/api/system/status").json()
         assert status["roots"] == [str(root.resolve())]
         assert status["discovery"]["file_contents_read"] is False
         assert status["screen_awareness"] == {
-            "state": "not_configured",
+            "state": "unavailable",
             "capture_active": False,
             "monitors_visible": 0,
+            "monitors": [],
             "clicking_enabled": False,
-            "detail": "No screen capture, monitor inventory, visual understanding or clicking connector is active.",
+            "detail": "Screen access is disabled by NEXUS_SCREEN_DISABLED=1.",
         }
+
+
+def test_wps_launch_uses_fixed_catalog_and_wps_folder_request_is_honest(monkeypatch, tmp_path):
+    api, root = make_client(monkeypatch, tmp_path)
+    (root / "Documents").mkdir()
+    launches = []
+    monkeypatch.setattr("backend.system._application_executable", lambda app: "/usr/bin/wps" if app == "wps" else None)
+    monkeypatch.setattr("backend.system._launch", lambda command: launches.append(command))
+    with api:
+        command = api.post("/api/commands", json={"text": "Open WPS Office"}).json()
+        assert command["intent"] == "system.open_application"
+        assert command["approval"]["payload"] == {"application": "wps"}
+        assert launches == []
+        outcome = api.post(f"/api/approvals/{command['approval']['id']}/approve").json()
+        assert outcome["command_status"] == "completed"
+        assert launches == [["/usr/bin/wps"]]
+
+        folder = api.post("/api/commands", json={"text": "Open folder Documents with WPS"}).json()
+        assert folder["status"] == "unsupported"
+        assert "not a reliable folder viewer" in folder["message"]
+        assert "approval" not in folder
+        assert len(launches) == 1
