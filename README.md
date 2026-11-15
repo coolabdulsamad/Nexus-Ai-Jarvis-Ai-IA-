@@ -1,6 +1,6 @@
 # Nexus — Local Intelligence
 
-Nexus is a local-first personal AI assistant with **real free-form conversation through a configured local Ollama model**, plus a separate validated command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, push-to-talk and opt-in wake-word browser sessions, approval-gated browser navigation/search, bounded local folder discovery, approval-gated VS Code/file-manager launching, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, and switchable interactive yellow particle globe and speech-reactive humanoid modes.
+Nexus is a local-first personal AI assistant with **real free-form conversation through a configured local Ollama model**, plus deterministic local time/date answers and a separate validated command path, persistent notes and typed memories, a command/response timeline, an approval-gated Android/iPhone owned-device registry, explicit approval/rejection, audit history, push-to-talk and opt-in wake-word browser sessions, approval-gated browser navigation/search, bounded local folder discovery, approval-gated VS Code/WPS Office/file-manager launching, one fixed read-only Git-status action, an approval-gated video-only local webcam preview, one-shot approved multi-monitor inspection with optional local vision, separately approved single-click control, and switchable interactive yellow particle globe and speech-reactive humanoid modes.
 
 Ollama supplies model **inference**, not automatic training or self-modification. Nexus does **not** pretend that a model is available when Ollama is offline, that arbitrary terminal commands, exact-target browser clicking, adaptive skill installation, AC, mobile control, IP/CCTV or ESP32-CAM connectors are already active.
 
@@ -28,6 +28,8 @@ On Ubuntu/Linux, install Ollama and pull the default model:
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b
+# Needed only for approved monitor inspection and target location:
+ollama pull llava:7b
 ```
 
 For macOS or Windows, install Ollama from **https://ollama.com/download**, open it, then run the same `ollama pull qwen2.5:3b` command. On Linux, if the service is not already running, use:
@@ -49,6 +51,8 @@ What can you help me plan today?
 The model receives the assistant name saved in **Assistant & model**, up to four recent conversation exchanges and up to six explicitly approved typed memories. These inputs are bounded and marked as untrusted reference data. This is conversational context, not semantic memory search or training. Select another installed model or disable free-form chat in **Assistant & model**; the setting persists locally.
 
 Phase 09 streams model tokens into the visible result, reports measured first-token and total command timings, reuses a successful readiness check for 60 seconds, keeps the model warm for thirty minutes, and reduces post-command dashboard work from eleven requests to four. The model is still asked for concise ordinary answers with bounded generation/context. Streaming reduces time to the first visible text; it does not guarantee faster total inference on every machine. Model speed depends on your model, hardware, prompt and current load.
+
+Phase 10 mixes that conversation with deterministic capabilities: laptop-local time/date questions and monitor inventory never call Ollama. Approved monitor snapshots use the separate persisted **Vision model** setting, defaulting to `llava:7b`. A text model such as `qwen2.5:3b` cannot analyse images; install a vision-capable model and select it in **Assistant & model** before testing screen inspection. Vision descriptions and target proposals never receive action-execution privileges.
 
 Optional environment configuration belongs in `.env` (never commit it):
 
@@ -87,6 +91,11 @@ No cloud model provider is connected in this phase. A future cloud route must be
 23. Configure comma-separated wake phrases and a recognition language in **Assistant & model**, then choose **Enable wake phrases**. Defaults are `Nexus, Hey` and `en-NG`. Say `Nextus, what time is it?`, `Next to, system status`, or `Hey` alone; bounded Nexus aliases cover common recognition variants. A phrase alone opens one ten-second command window. Choose **Stop voice session** to end capture.
 24. With the wake session still enabled, send `Open a folder`. Nexus asks which folder and, only after the spoken question finishes, listens for one answer for up to twelve seconds without another wake phrase. Answer with a folder name. If several match, choose an exact result or answer `the first one`; `cancel` opens nothing. Every resolved launch still requires approval.
 25. Ask a model question whose response ends in a question mark. The same bounded post-question reply window opens after speech. Use Stop speaking or Stop voice session to cancel. Typed commands remain available throughout.
+26. Ask `What is today’s date?`, `Tell me the time` or `What day is it?`. These complete immediately from the laptop clock without Ollama and create no approval.
+27. Send `Open WPS Office`. Confirm that its approval names WPS Office; rejection launches nothing, and approval requests one fixed-executable launch. `Open folder Documents with WPS` must explain that WPS is not a supported folder viewer and open nothing.
+28. Send `Show monitors`. Nexus lists current monitor bounds without capturing screen content. Then send `What am I doing in my first monitor?`; rejection must perform no capture or analysis.
+29. With the configured vision model ready, approve the monitor inspection. Review the one-shot snapshot and visible-evidence description. The image is transient and is not stored as a file or database frame.
+30. Send `Click the play button in my second monitor`. The first approval covers capture and target location only. If Nexus proposes a target, review its snapshot and global coordinates, then choose **Request click approval**. Reject the click once to confirm no pointer action; repeat and approve only when the exact coordinates are correct. One left click is authorised—no keyboard input or repeated clicking.
 
 ## Camera preview and consent boundary
 
@@ -125,9 +134,11 @@ No cloud model provider is connected in this phase. A future cloud route must be
 
 - `GET /api/system/directories` searches directory metadata under `NEXUS_SYSTEM_ROOTS`, defaulting to your home directory. It scans at most 600 entries, two directory levels deep, returns at most 30 results, skips hidden directories and symlinks, and never reads file contents.
 - Folder commands resolve an exact directory before creating an approval. Ambiguous names return choices; missing, hidden or outside-root paths create no launch approval. Explicit absolute paths must still be inside a configured root.
-- The application catalog contains only VS Code and the platform file manager. `system.open_application` and `system.open_folder` approvals are revalidated and executed with fixed argument lists and `shell=False`. The payload cannot select an arbitrary executable or shell string.
-- `GET /api/system/status` reports roots, application detection and discovery limits. Screen capture, monitor inventory, visual screen understanding and clicking remain `not_configured`; the console never simulates them.
-- VS Code must be available as `code`, `code-insiders` or `codium` on the API host's PATH. In VS Code, its shell-command installer may be needed. On WSL, launches occur in the WSL/Windows integration environment available to those executables.
+- The application catalog contains only VS Code, WPS Office and the platform file manager. `system.open_application` and `system.open_folder` approvals are revalidated and executed with fixed argument lists and `shell=False`. The payload cannot select an arbitrary executable or shell string. WPS application launch is supported, but WPS folder requests return unsupported without opening anything.
+- `GET /api/system/status` reports roots, application detection, discovery limits and real monitor metadata. `Show monitors` reads only monitor IDs, bounds and primary-display status; it does not capture pixels.
+- `What am I doing in my first monitor?` creates a one-shot capture approval. Approval captures and analyses one monitor; rejection captures nothing. `Click the play button in my second monitor` follows the same capture approval and returns at most a proposed target location—it never clicks during inspection.
+- The console displays the transient snapshot and, only for a confident valid proposal, a button to request a separate exact-coordinate click approval. Click approval revalidates current monitor bounds and authorises one left click. There is no keyboard control, repeated click, continuous capture, screenshot file or database image storage.
+- VS Code must be available as `code`, `code-insiders` or `codium` on the API host's PATH. WPS must be available as `wps` on native Linux or `wps.exe`/`wps` in the Windows/WSL integration environment. Screen capture uses `mss` and Pillow on native Linux, `pyautogui` for an approved Linux click, and the included local PowerShell helper on Windows/WSL. Headless or unsupported graphical environments report unavailable honestly.
 
 Example root configuration in `.env`:
 
@@ -161,7 +172,7 @@ npx --yes npm@12.2.2 install
 bash scripts/dev.sh
 ```
 
-Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–09 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 09 adds the `en-NG` speech-locale default and supports comma-separated wake phrases while preserving an existing saved wake phrase. It never enables the microphone on upgrade. Ollama manages model downloads separately, and no model weights are committed to Git.
+Your local `data/nexus.db` is excluded from Git and remains on your machine. Phases 04–10 add their tables/settings automatically without deleting existing notes, memories, devices, settings or audit history. Phase 09 adds the `en-NG` speech-locale default and supports comma-separated wake phrases while preserving an existing saved wake phrase. It never enables the microphone on upgrade. Phase 10 adds the `llava:7b` vision-model default without downloading model weights or enabling capture. Ollama manages model downloads separately, and no model weights are committed to Git.
 
 ## Tests and checks
 
@@ -169,7 +180,7 @@ Your local `data/nexus.db` is excluded from Git and remains on your machine. Pha
 bash scripts/test.sh
 ```
 
-This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build. Ollama tests use a mocked provider, so the suite does not need to download a model or expose a real service.
+This runs API integration tests, TypeScript checks, frontend unit tests, ESLint and a production build. Ollama chat/vision and monitor hardware are mocked, so the suite does not need to download a model, expose a real service, capture a physical display or click a real desktop. Physical Windows/WSL, dual-monitor, WPS and vision behaviour must still be verified on your laptop.
 
 For an optional physical Ollama smoke test after installation:
 
@@ -211,12 +222,12 @@ Open **http://localhost:8000**. The named volume preserves notes, typed memories
 
 ## Project map
 
-- `backend/` — FastAPI application, Ollama inference client, command/model orchestrator, bounded system/app connectors, scoped browser/Git connectors, SQLite repository and tests.
-- `src/` — React console, wake/push-to-talk voice lifecycle, system-control panel, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
-- `scripts/` — setup, development and verification commands.
+- `backend/` — FastAPI application, Ollama chat/vision client, deterministic command/model orchestrator, bounded system/app/screen connectors, scoped browser/Git connectors, SQLite repository and tests.
+- `src/` — React console, wake/push-to-talk voice lifecycle, system/monitor controls, transient snapshot review, interactive Three.js particle globe/humanoid, memory/timeline views, video-only camera preview, owned-device/home panels, typed API client and styles.
+- `scripts/` — setup, development, verification and the fixed Windows screen-helper commands.
 - `docs/` — architecture, security boundaries and delivery roadmap.
 - `Dockerfile` — self-contained production build with persistent `/data` volume.
 
 ## Current boundaries
 
-This phase intentionally contains no model training/fine-tuning, autonomous self-modification, persistent background/offline wake-word engine, speaker authentication, screen capture or monitor understanding, exact-target clicking, arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control/tracking, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture or platform-security bypass. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.
+This phase intentionally contains no model training/fine-tuning, autonomous self-modification, persistent background/offline wake-word engine, speaker authentication, continuous screen recording/activity monitoring, exact-target browser clicking, arbitrary terminal execution, autonomous web-derived code, adaptive skill installation, phone pairing/control/tracking, configured home/AC control, IP/CCTV or ESP32-CAM ingestion, camera recording/storage, hidden capture or platform-security bypass. Monitor support is limited to visible one-shot approved inspection and separately approved single clicks; it does not prove continuous awareness or reliable GUI automation. Future consequential actions use the same request → validation → policy → approval → scoped skill → audit path. See `docs/SECURITY.md` and `docs/ROADMAP.md`.

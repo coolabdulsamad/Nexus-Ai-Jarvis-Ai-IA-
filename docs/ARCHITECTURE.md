@@ -4,13 +4,13 @@
 
 1. The React console accepts typed text, a final push-to-talk transcript, or a command extracted from an explicitly enabled wake-word session.
 2. All command inputs use `POST /api/commands/stream`; the non-streaming `POST /api/commands` remains as a compatibility API. Both enter the same orchestrator and approval policy.
-3. The orchestrator first classifies the explicit action/status intents and constructs typed payloads. Known connector boundaries remain deterministic.
+3. The orchestrator first classifies explicit action/status intents and constructs typed payloads. Local time/date questions and monitor inventory bypass Ollama completely; known connector boundaries remain deterministic.
 4. A message outside those intents becomes `assistant.chat`. The Ollama provider reuses a short-lived readiness cache, builds a bounded identity/history/approved-memory prompt and calls `POST /api/chat` with a thirty-minute `keep_alive`. The streaming route forwards generated text tokens as server-sent events, then emits one final result with measured first-token and total timings. It returns generated text only; it has no tool or action executor.
-5. Read-only local status/time/list intents complete immediately. If Ollama is offline, disabled or missing the selected model, model chat returns an honest `unavailable`, `model_missing` or disabled response without affecting fixed commands.
-6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview and fixed app/folder launches create a pending approval and an audit event, regardless of whether the request was typed or spoken.
+5. Read-only local status/time/date/list/monitor-inventory intents complete immediately. If Ollama is offline, disabled or missing the selected model, model chat returns an honest `unavailable`, `model_missing` or disabled response without affecting fixed commands.
+6. Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview, fixed app/folder launches, monitor snapshots/target location and exact-coordinate clicks create pending approvals and audit events, regardless of whether the request was typed or spoken.
 7. The user approves or rejects the exact action payload in the console.
-8. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. Rejection performs no side effect, and a resolved approval cannot be executed again.
-9. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream.
+8. Only approval executes the action in the same SQLite transaction as the decision. Camera approval creates an `approved` session only; browser camera access remains a separate step. A screen inspection/location approval authorises one snapshot and vision inference but no click. A later `screen.click` approval contains exact global coordinates and authorises one left click only. Rejection performs no side effect, and a resolved approval cannot be executed again.
+9. Connector outcomes preserve `completed`, `unavailable` or `failed` honestly; browser launch failure is not presented as success. Camera state becomes `active` only after the console obtains and plays a real browser video stream. Screen images are returned transiently for the current response and are not written to SQLite or snapshot files.
 10. The original command row is updated with the final response and outcome, making it available to the persistent conversation timeline and bounded later model context.
 11. When spoken responses are enabled, the browser speech synthesizer reads the result message. A stop control cancels playback immediately. Terminal output is displayed as text rather than spoken character by character.
 
@@ -22,14 +22,15 @@
 - `src/components/SceneZoomControls.tsx`: shared accessible zoom-in, zoom-out and reset actions; each Three.js scene owns its camera.
 - `src/lib/useVoice.ts`: one explicit voice state machine covering idle, push listening, wake listening, wake follow-up, processing, speaking and post-question follow-up listening. It owns guarded restarts, bounded timers, speech-time capture exclusion, duplicate-dispatch prevention, multiple wake phrases, bounded Nexus recognition aliases, spoken responses and interruption. No audio is stored by Nexus.
 - `src/lib/conversation.ts`: typed follow-up metadata and deterministic folder-reply mapping. Model questions can open a bounded listening window but cannot create actions; folder replies return to the normal command parser.
-- `src/components/SystemControl.tsx`: bounded directory search, exact-path launch requests, fixed application detection and explicit inactive screen status.
+- `src/components/SystemControl.tsx`: bounded directory search, exact-path launch requests, fixed application detection, read-only monitor inventory and inspection request buttons.
 - `src/lib/camera.ts`: the only browser webcam request helper; it fixes video to the user-facing camera, sets `audio: false` and stops every track on cleanup.
-- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions and browser-tab handoff.
+- `src/pages/Home.tsx`: command console, tabbed notes/typed-memory/timeline views, local camera preview and lifecycle reporting, owned-device/home panels, approval decisions, transient snapshot review, exact-coordinate click requests and browser-tab handoff.
 - `backend/main.py`: FastAPI routes, validation, model-status endpoint and production static hosting.
-- `backend/ollama.py`: local Ollama model detection, short-lived readiness caching, bounded non-streaming and NDJSON streaming inference, model keep-alive, Nexus identity prompt, bounded history/memory context and honest provider failures. It exposes no action or tool execution.
-- `backend/commands.py`: explicit intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction, bounded folder-request resolution and connector boundaries.
-- `backend/connectors.py`: approval-time payload revalidation, client-browser confirmation or local browser fallback, fixed-argument Git-status execution, and fixed local application/folder launches.
-- `backend/system.py`: bounded local directory discovery, configured-root validation, fixed application detection, shell-free argument lists and explicit inactive screen status.
+- `backend/ollama.py`: local Ollama model detection, short-lived readiness caching, bounded non-streaming and NDJSON streaming inference, model keep-alive, Nexus identity prompt, bounded history/memory context, approved one-shot vision inference and honest provider failures. It exposes no action or tool execution.
+- `backend/commands.py`: explicit deterministic time/date and intent routing, model-chat fallback, typed-memory and owned-device parsing, URL construction, bounded folder-request resolution, monitor-command parsing and connector boundaries.
+- `backend/connectors.py`: approval-time payload revalidation, client-browser confirmation or local browser fallback, fixed-argument Git-status execution, fixed local application/folder launches, transient screen inspection, image-to-global coordinate conversion and single-click execution.
+- `backend/system.py`: bounded local directory discovery, configured-root validation, fixed VS Code/WPS Office/file-manager detection, shell-free argument lists and real screen-connector status.
+- `backend/screen.py` and `scripts/windows_screen.ps1`: bounded monitor metadata, one-shot in-memory capture, coordinate revalidation and one-left-click connectors for native Linux and Windows/WSL.
 - `backend/store.py`: SQLite schema and transactional repository for commands, notes, typed memories, owned-device records, camera-session metadata, typed approvals, settings and audit events.
 - `data/nexus.db`: local runtime data, excluded from Git.
 
@@ -37,11 +38,11 @@
 
 `GET /api/assistant/status` checks Ollama separately from the Nexus API. It reports `ready`, `model_missing`, `unavailable` or `disabled`, the selected model and a bounded installed-model list. A healthy FastAPI core therefore does not imply that an AI model is ready.
 
-The default model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, generation limits, a two-megabyte streamed-response budget and bounded response text. The console displays tokens incrementally but speaks only the completed response so synthesis and recognition cannot overlap.
+The default chat model is `qwen2.5:3b`; users can persist another Ollama model name in settings. The separate vision model defaults to `llava:7b` and is used only after monitor-snapshot approval. The Ollama base URL and timeouts come from local environment configuration, not from model output or browser-supplied URLs. Status checks have a short timeout; chat has a bounded configurable timeout, generation limits, a two-megabyte streamed-response budget and bounded response text. The console displays tokens incrementally but speaks only the completed response so synthesis and recognition cannot overlap.
 
 The system prompt supplies the configured assistant name and explicit truthfulness/action boundaries. Up to four recent completed exchanges and six approved memories are included with per-item limits. Memories and history are labelled untrusted data. No embedding retrieval, model training, fine-tuning, weight update or autonomous self-modification occurs.
 
-Model output becomes only the `assistant.chat` response and timeline text. It cannot create an approval, invoke a connector, select a tool, run code or change settings. A user can still request a supported action through the deterministic command path and approve its exact payload separately.
+Chat-model output becomes only the `assistant.chat` response and timeline text. Vision output becomes a transient description or an unexecuted target proposal. Neither can create an approval, invoke a connector, select a tool, run code or change settings. A user can still request a supported action through the deterministic command path and approve its exact payload separately.
 
 ## Persistent memory contract
 
@@ -93,9 +94,17 @@ Directory discovery defaults to the user's home directory. `NEXUS_SYSTEM_ROOTS` 
 
 Folder requests are resolved before an approval is created. Missing or ambiguous names return available exact-name choices without creating a launch approval. An exact match creates `system.open_folder` with the resolved absolute path and selected application. Explicit paths must remain inside a configured root and may not traverse hidden directories.
 
-The application catalog is fixed to VS Code (`code`, `code-insiders` or `codium`) and the platform file manager. VS Code receives only `--new-window` and the stored absolute directory. File-manager and application-only launches likewise use connector-defined executables and argument patterns with `shell=False`. The stored payload and resolved directory are revalidated during the single-use approval transaction; a missing executable or launch failure is reported honestly.
+The application catalog is fixed to VS Code (`code`, `code-insiders` or `codium`), WPS Office (`wps` or `wps.exe`) and the platform file manager. VS Code receives only `--new-window` and the stored absolute directory. WPS is an application-only launch and is deliberately rejected as a folder viewer. File-manager and application-only launches likewise use connector-defined executables and argument patterns with `shell=False`. The stored payload and resolved directory are revalidated during the single-use approval transaction; a missing executable or launch failure is reported honestly.
 
-`GET /api/system/status` reports application installation and screen state. Screen capture remains `not_configured`, with no active capture, visible monitor inventory, visual understanding, activity inference or clicking. `GET /api/system/directories` performs only the bounded discovery described above. Future screen connectors need visible capture consent, exact monitor/window scope, retention limits, target confirmation and separate approval for every click or input action.
+`GET /api/system/status` reports application installation and real monitor state. Monitor inventory reads metadata without capturing pixels. `GET /api/system/directories` performs only the bounded discovery described above.
+
+### Monitor inspection and click contract
+
+1. `screen.capture` or `screen.locate` stores only the monitor ID, question/target and `storage: none` in its approval. Rejection performs no capture. Approval captures one current monitor, resizes it to at most 1600 pixels wide and sends the in-memory PNG to the configured Ollama vision model.
+2. Descriptions must stick to visible evidence. Target prompts require strict JSON with image-relative integer coordinates, confidence and visual evidence. Screenshot text is marked untrusted and cannot issue instructions.
+3. The connector accepts only in-bounds coordinates and finite confidence from 0.55 through 1.0. It scales valid image coordinates to global desktop coordinates using the captured monitor bounds. Invalid, uncertain or missing proposals contain no click coordinates.
+4. The API returns the PNG data URL and proposal only in the transient approval result. SQLite stores the text outcome and audit metadata, not the image. The browser displays the snapshot so the user can request a new `screen.click` approval with exact global coordinates.
+5. Click execution re-reads current monitor bounds, rejects stale/out-of-bounds coordinates and sends exactly one left click. It never sends keyboard input or additional clicks. Native Linux uses `mss`, Pillow and lazy-loaded `pyautogui`; Windows/WSL uses the fixed local PowerShell helper. Unsupported/headless environments return unavailable or failed without claiming success.
 
 ## Browser and terminal contract
 
@@ -119,4 +128,4 @@ The Dockerfile builds the frontend and serves it through FastAPI on port 3000. A
 
 ## Next connector contract
 
-Every future connector must expose a typed action, risk tier, required parameters and approval policy. Mobile, home, IP/CCTV, ESP32-CAM and sensor connectors must return honest `unavailable` responses until configured. Model output, transcripts, web content, camera frames and retrieved documentation are data, never permission to execute code or alter policy.
+Every future connector must expose a typed action, risk tier, required parameters and approval policy. Mobile, home, IP/CCTV, ESP32-CAM and sensor connectors must return honest `unavailable` responses until configured. Model output, transcripts, web content, camera frames, monitor screenshots, screen text and retrieved documentation are data, never permission to execute code or alter policy.

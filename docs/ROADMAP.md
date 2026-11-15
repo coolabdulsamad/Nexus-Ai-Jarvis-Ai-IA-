@@ -96,10 +96,19 @@ Future screen work must add visible capture consent, exact monitor/window scope,
 
 This phase does not provide speaker identification or an “only my voice” security mode. Browser speech recognition identifies words rather than speakers and may use a vendor network service. A future consented local speaker-profile filter must be separately enrolled, revocable and honestly described as fallible and replay-susceptible; it must never replace authentication or action approvals. Persistent offline/background wake listening, screen capture/clicking, mobile tracking/control, home/AC connectivity, autonomous learning, training and self-modification remain unavailable.
 
-## Phase 10 — genuine device and home connectors
+## Phase 10 — hybrid local intelligence and multi-monitor control (delivered)
+
+- Added deterministic laptop-local time and date answers, including common apostrophe variants, without sending those requests to Ollama. Free-form conversation still uses the configured local model.
+- Added WPS Office to the fixed application catalog with approval-gated, shell-free launching. WPS folder requests return an honest unsupported result because WPS is not treated as a reliable directory viewer; VS Code and the file manager remain folder choices.
+- Added read-only monitor inventory and approval-gated one-shot monitor snapshots. Captures are resized to at most 1600 pixels wide, returned for the current response and never stored as image files or database frames.
+- Added configurable Ollama vision descriptions and strict-JSON target proposals. A proposal requires in-bounds coordinates and finite confidence of at least 0.55; uncertain or malformed results produce no coordinates and no click.
+- Added a second exact-coordinate approval for one visible left click. Current monitor bounds are revalidated, and rejection, tampering or an unsupported graphical environment performs no click. No keyboard input, repeated clicking or continuous capture is authorised.
+- Added snapshot review, monitor controls, vision-model settings and safety regression tests. Physical Windows/WSL, dual-monitor, WPS and Ollama-vision behaviour still requires verification on the user's laptop.
+
+## Phase 11 — genuine device and home connectors
 
 Implement platform-authorised Android/iPhone companion pairing and explicitly scoped actions, followed by one configured home connector with exact device selection and verified outcomes. Add IP/CCTV, ESP32-CAM and ESP32 sensor connectors separately with consent, authentication, retention and audit controls. Registration records must not be presented as real connections.
 
-## Phase 11 — reviewed adaptive capabilities and expanded automation
+## Phase 12 — reviewed adaptive capabilities and expanded automation
 
 Unknown capabilities follow documentation retrieval → typed proposal → isolated tests → human review → signing/versioning → monitoring and rollback. Raw pages, documents, transcripts and model output remain untrusted data. Browser exact-target clicking, scoped coding automation, Git operations and deployment each require their own permission boundaries and tests before activation. Fine-tuning, if deliberately added later, is a separate reviewed dataset/training/evaluation workflow—not a side effect of chat.

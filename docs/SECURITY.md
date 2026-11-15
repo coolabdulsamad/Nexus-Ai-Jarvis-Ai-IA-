@@ -4,11 +4,11 @@
 
 - Nexus binds development services to localhost. Do not enable router port forwarding.
 - The repository excludes `.env`, local databases and personal runtime data.
-- Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview and fixed local application/folder launches require explicit approval. Rejection performs no action.
-- An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path. Camera approval creates session metadata but cannot by itself grant browser camera permission.
-- Audit events record command receipt, approval requests, decisions, settings updates, connector outcomes and browser-reported camera lifecycle changes.
+- Note creation, typed-memory creation, owned-device registration, browser navigation/search, Git status, camera preview, fixed local application/folder launches, monitor snapshots/target location and exact-coordinate monitor clicks require explicit approval. Rejection performs no action.
+- An approval can be resolved only once; a repeated decision returns HTTP 409. Connector execution occurs only through that single-use decision path. Camera approval creates session metadata but cannot by itself grant browser camera permission. Screen inspection and clicking use separate approvals; locating a target never clicks it.
+- Audit events record command receipt, approval requests, decisions, settings updates, connector outcomes and browser-reported camera lifecycle changes. Snapshot pixels are not written into audit records.
 - Direct settings changes are reversible local preferences chosen by the user; they do not grant connector privileges or approve commands.
-- There is no arbitrary shell endpoint, exact-target browser clicking, screen capture/understanding or monitor-clicking connector, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
+- There is no arbitrary shell endpoint, exact-target browser clicking, continuous screen recording, adaptive skill installer, camera recording/frame-storage endpoint or device-control endpoint.
 
 ## Local model and untrusted output
 
@@ -16,8 +16,9 @@
 - Model availability is reported independently from core availability. Offline, missing, disabled, timed-out and malformed model responses produce no fabricated answer.
 - The model receives the configured assistant name, bounded recent conversation text and explicitly approved typed memories. Do not store passwords, access tokens or secrets in any of them.
 - Conversation history and memory are untrusted reference data, not instructions that can override policy. Model output is also untrusted data.
-- The Ollama client exposes text generation only. It has no tool definitions, connector credentials, shell access or action executor. Model text cannot create/approve requests, execute browser/terminal/device actions, alter settings or change audit policy.
+- The Ollama client exposes text generation and approved one-shot vision inference only. It has no tool definitions, connector credentials, shell access or action executor. Model text and target proposals cannot create/approve requests, execute browser/terminal/device/screen actions, alter settings or change audit policy.
 - The provider URL comes from local environment configuration; model output cannot select a URL. Requests use bounded timeouts, generation limits, a two-megabyte streaming budget and response-size limits. Streaming changes display timing only; it does not give model text an execution path.
+- A monitor snapshot is sent to the configured Ollama vision model only after its exact capture approval. Screenshot text is explicitly untrusted visual data. Target location requires strict JSON, in-bounds integer coordinates and finite confidence from 0.55 through 1.0; the result is only a proposal and cannot click.
 - The default route is a local Ollama service and needs no API key. No cloud provider is connected. Any later cloud route requires explicit configuration, secret storage outside Git/model context and clear disclosure that data leaves the local machine.
 
 ## Persistent memory and conversation data
@@ -70,10 +71,13 @@
 
 - Directory discovery is limited to the user's home directory or explicitly configured `NEXUS_SYSTEM_ROOTS`, with at most eight roots, 600 scanned entries, depth two and 30 results. Hidden directories are skipped, symlinks are not followed and file contents are never read.
 - Missing or ambiguous folder names create no launch approval. Exact-name matches and explicit absolute paths must resolve to a real directory inside one configured root.
-- Only fixed VS Code and platform file-manager launch patterns exist. User text, model output and approval payloads cannot select arbitrary executables, arguments, working directories or shells.
+- Only fixed VS Code, WPS Office and platform file-manager launch patterns exist. User text, model output and approval payloads cannot select arbitrary executables, arguments, working directories or shells. WPS folder requests are unsupported and create no approval because WPS is not treated as a reliable folder viewer.
 - Launch execution revalidates the stored exact path and application, uses an argument list with `shell=False`, and reports unavailable or failed outcomes rather than claiming a window opened.
 - Approval authorises one exact local application or folder launch. It does not grant access to file contents, terminal commands, screen content, clicks, later launches or other devices.
-- Screen status is deliberately inactive: no screenshots, display capture, monitor enumeration, visual model, activity inference or mouse/keyboard control is configured. Future capture and input control require visible consent, exact scope, target confirmation, retention rules, separate approvals and audits.
+- Monitor inventory reads display metadata only and captures no pixels. `screen.capture` and `screen.locate` require approval before one monitor snapshot is taken; rejection performs no capture or vision inference.
+- Captures are resized to a maximum width of 1600 pixels, bounded in response size and held only in memory for the current response. They are not saved as screenshot files, database frames or audit payloads. There is no continuous capture or background activity monitor.
+- Target location is a model proposal, never an input event. Low confidence, malformed coordinates or vision failure produces no click. The console must create a separate `screen.click` request containing exact global coordinates.
+- Click approval revalidates the current monitor and coordinate bounds and authorises exactly one left click with no keyboard input or additional clicking. Rejection sends no pointer movement or click. Screen content can change after inspection, so the user must review the snapshot and coordinates before approving.
 
 ## Voice and microphone
 
@@ -88,9 +92,9 @@
 
 ## Risk tiers
 
-- Tier 0: read-only local status, time, note/memory listing, conversation timeline, camera-session status and audit inspection.
+- Tier 0: read-only local status, time/date, note/memory listing, conversation timeline, monitor inventory, camera-session status and audit inspection.
 - Tier 1: reversible or tightly scoped local actions, including approved note/memory creation, not-connected device registration and the fixed Git-status read.
-- Tier 2: external or sensitive actions, including browser navigation, local camera preview and approved local application/folder launches; future screen capture/clicking, messages, recording and Git push also belong here.
+- Tier 2: external or sensitive actions, including browser navigation, local camera preview, approved local application/folder launches and one-shot monitor capture/vision/single-click control; future messages, recording and Git push also belong here.
 - Tier 3: high-impact actions, including deletion, production deployment and unlocking.
 - Blocked: disabling audit, bypassing consent, stealing secrets or expanding privileges through conversation.
 
