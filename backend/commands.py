@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import urlencode
 
 from .connectors import validated_browser_url
 from .store import Store
 from .system import APPLICATIONS, resolve_directory_request
+from .screen import ScreenError, list_monitors
 
 if TYPE_CHECKING:
     from .ollama import OllamaAssistant
@@ -68,14 +69,14 @@ CAPABILITIES = [
         "label": "Approved apps & folders",
         "status": "available",
         "tier": 2,
-        "description": "Discover bounded directory metadata and open VS Code, the file manager or a validated folder after approval. No arbitrary shell commands.",
+        "description": "Discover bounded directory metadata and open VS Code, WPS Office, the file manager or a validated folder after approval. No arbitrary shell commands.",
     },
     {
         "id": "screen",
         "label": "Screen & multi-monitor awareness",
-        "status": "planned",
+        "status": "available",
         "tier": 2,
-        "description": "No display capture, screen understanding, monitor inventory or clicking is active. These need separate visible consent and scoped connectors.",
+        "description": "Read-only monitor inventory, one-shot approved snapshots and local vision. Target location is a proposal; every exact-coordinate click needs separate approval. No continuous recording.",
     },
     {
         "id": "devices",
@@ -200,8 +201,17 @@ def _browser_request(text: str) -> tuple[str, dict[str, Any]] | None:
         return None
 
 
+def _application_id(value: str) -> str:
+    normalized = " ".join(value.casefold().split())
+    if normalized in {"files", "file manager"}:
+        return "files"
+    if normalized in {"wps", "wps office"}:
+        return "wps"
+    return "vscode"
+
+
 def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
-    app_names = r"(?:vs\s*code|visual\s+studio\s+code|vscode|file\s+manager|files)"
+    app_names = r"(?:vs\s*code|visual\s+studio\s+code|vscode|file\s+manager|files|wps\s+office|wps)"
     incomplete_folder = re.match(
         rf"^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?(?:a\s+)?(?:folder|directory)"
         rf"(?:\s+(?:in|with|using)\s+({app_names}))?$",
@@ -209,8 +219,7 @@ def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
         flags=re.IGNORECASE,
     )
     if incomplete_folder:
-        app_name = (incomplete_folder.group(1) or "vscode").lower()
-        application = "files" if app_name in {"files", "file manager"} else "vscode"
+        application = _application_id(incomplete_folder.group(1) or "vscode")
         return "system.clarify_folder", {"application": application}
 
     folder_patterns = [
@@ -222,10 +231,9 @@ def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
         if not match:
             continue
         query = match.group(1).strip().strip("'\"")
-        app_name = (match.group(2) or "vscode").lower()
         if not query or len(query) > 200 or any(char in query for char in "\x00\r\n"):
             return None
-        application = "files" if app_name in {"files", "file manager"} else "vscode"
+        application = _application_id(match.group(2) or "vscode")
         return "system.open_folder", {"query": query, "application": application}
 
     application = re.match(
@@ -234,9 +242,58 @@ def _system_request(text: str) -> tuple[str, dict[str, Any]] | None:
         flags=re.IGNORECASE,
     )
     if application:
-        app_name = application.group(1).lower()
-        app_id = "files" if app_name in {"files", "file manager"} else "vscode"
+        app_id = _application_id(application.group(1))
         return "system.open_application", {"application": app_id}
+    return None
+
+
+def _screen_monitor_id(value: str) -> int:
+    normalized = value.casefold()
+    if normalized.startswith("monitor "):
+        return int(normalized.split()[1])
+    first = normalized.split()[0]
+    if first.isdigit():
+        return int(first)
+    return {"first": 1, "second": 2, "third": 3, "fourth": 4}[first]
+
+
+def _screen_request(text: str) -> tuple[str, dict[str, Any]] | None:
+    coordinate = re.match(
+        r"^(?:please\s+)?(?:confirm\s+)?click(?:\s+on)?\s+monitor\s+(\d{1,2})"
+        r"(?:\s+at)?\s+(?:x\s*=\s*)?(\d+)\s*,?\s+(?:y\s*=\s*)?(\d+)(?:\s+for\s+(.+))?$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if coordinate:
+        target = (coordinate.group(4) or "approved target").strip()[:160]
+        return "screen.click", {
+            "monitor_id": int(coordinate.group(1)),
+            "x": int(coordinate.group(2)),
+            "y": int(coordinate.group(3)),
+            "target": target,
+        }
+
+    monitor = r"((?:first|second|third|fourth|\d{1,2})\s+monitor|monitor\s+\d{1,2})"
+    semantic_click = re.match(
+        rf"^(?:please\s+)?click\s+(?:the\s+)?(.+?)\s+(?:on|in)\s+(?:my\s+)?{monitor}$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if semantic_click:
+        number = _screen_monitor_id(semantic_click.group(2))
+        target = semantic_click.group(1).strip()[:160]
+        if target:
+            return "screen.locate", {"monitor_id": number, "target": target, "storage": "none"}
+
+    inspection = re.match(
+        rf"^(?:please\s+)?(what\s+am\s+i\s+doing|what(?:'s| is)\s+happening|what(?:'s| is)\s+on|describe|inspect|analy[sz]e)"
+        rf"(?:\s+(?:on|in))?\s+(?:my\s+)?{monitor}$",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if inspection:
+        number = _screen_monitor_id(inspection.group(2))
+        return "screen.capture", {"monitor_id": number, "question": text[:500], "storage": "none"}
     return None
 
 
@@ -260,12 +317,13 @@ def handle_command(
     on_token: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     normalized = " ".join(text.strip().split())
-    lowered = normalized.lower().rstrip("?!")
+    lowered = normalized.lower().replace("’", "'").replace("‘", "'").rstrip("?!")
     note_content = _note_content(normalized)
     memory_request = _memory_request(normalized)
     device_request = _device_request(normalized)
     browser_request = _browser_request(normalized)
     system_request = _system_request(normalized)
+    screen_request = _screen_request(normalized.replace("’", "'").replace("‘", "'").rstrip("?!"))
 
     if memory_request:
         intent = "memory.create"
@@ -273,8 +331,18 @@ def handle_command(
         intent = "device.register"
     elif note_content:
         intent = "note.create"
-    elif lowered in {"what time is it", "time", "current time", "what is the time"}:
+    elif re.fullmatch(
+        r"(?:what time is it|what(?:'s| is)(?: the)?(?: current)? time(?: is it)?|current time|time|tell me (?:the )?time)(?: right now| now)?",
+        lowered,
+    ):
         intent = "system.time"
+    elif re.fullmatch(
+        r"(?:what(?:'s| is)(?: the)?(?: current| today'?s)? date(?: today)?|what day is it|what day is today|today'?s date|current date|date|tell me (?:the )?date)",
+        lowered,
+    ):
+        intent = "system.date"
+    elif lowered in {"show monitors", "list monitors", "monitor status", "screen status", "show monitor status"}:
+        intent = "screen.monitors"
     elif lowered in {"system status", "status", "health", "are you online"}:
         intent = "system.status"
     elif lowered in {"list notes", "show notes", "read my notes", "list my notes"}:
@@ -301,6 +369,8 @@ def handle_command(
         "show repository status",
     }:
         intent = "terminal.git_status"
+    elif screen_request:
+        intent = screen_request[0]
     elif system_request:
         intent = system_request[0]
     elif browser_request:
@@ -332,6 +402,12 @@ def handle_command(
             "message": message,
             "follow_up": {"kind": "system.folder", "application": application},
         }
+
+    if intent in {"system.clarify_folder", "system.open_folder"} and system_request:
+        if system_request[1]["application"] == "wps":
+            message = "WPS Office can be launched after approval, but it is not a reliable folder viewer. Ask to open the folder with VS Code or the file manager instead. Nothing was opened."
+            store.finish_command(command_id, "unsupported", message)
+            return {**base, "status": "unsupported", "message": message}
 
     if intent == "assistant.chat" and assistant:
         reply = assistant.respond(store, normalized, command_id, on_token=on_token)
@@ -431,6 +507,39 @@ def handle_command(
             f"Approval required to open {directory['path']} with {label}. Nothing has opened yet.",
         )
 
+    if intent in {"screen.capture", "screen.locate"} and screen_request:
+        payload = screen_request[1]
+        monitor_id = payload["monitor_id"]
+        target = payload.get("target")
+        subject = f"locate {target!r}" if target else "describe visible activity"
+        return _approval_command(
+            command_id,
+            base,
+            store,
+            intent,
+            payload,
+            f"Permission requested to capture monitor {monitor_id} once and {subject} with the configured local vision model.",
+            (
+                f"Approval required to capture monitor {monitor_id} once and {subject}. "
+                "The snapshot will be used for this response only, not stored. No click is authorised."
+            ),
+        )
+
+    if intent == "screen.click" and screen_request:
+        payload = screen_request[1]
+        return _approval_command(
+            command_id,
+            base,
+            store,
+            intent,
+            payload,
+            f"Permission requested for one left click at ({payload['x']}, {payload['y']}) on monitor {payload['monitor_id']}.",
+            (
+                f"Approval required for one left click at exact global coordinates ({payload['x']}, {payload['y']}) "
+                f"on monitor {payload['monitor_id']} for {payload['target']!r}. Nothing has moved or clicked yet."
+            ),
+        )
+
     if intent in {"browser.navigate", "browser.search"} and browser_request:
         action, payload = browser_request
         destination = payload["url"]
@@ -463,8 +572,32 @@ def handle_command(
         )
 
     if intent == "system.time":
-        message = "Local core time is " + datetime.now(timezone.utc).strftime("%H:%M:%S UTC on %A, %d %B %Y") + "."
+        local_now = datetime.now().astimezone()
+        zone = local_now.strftime("%Z") or "local timezone"
+        message = (
+            "Your laptop’s local time is "
+            + local_now.strftime("%I:%M:%S %p").lstrip("0")
+            + f" {zone} (UTC{local_now.strftime('%z')[:3]}:{local_now.strftime('%z')[3:]}) on "
+            + local_now.strftime("%A, %d %B %Y")
+            + "."
+        )
         status = "completed"
+    elif intent == "system.date":
+        local_now = datetime.now().astimezone()
+        message = "Your laptop’s local date is " + local_now.strftime("%A, %d %B %Y") + "."
+        status = "completed"
+    elif intent == "screen.monitors":
+        try:
+            monitors = list_monitors()
+        except ScreenError as error:
+            message = str(error)
+            status = "unavailable"
+        else:
+            message = "Detected " + "; ".join(
+                f"monitor {monitor['id']} ({monitor['width']}×{monitor['height']} at {monitor['left']},{monitor['top']})"
+                for monitor in monitors
+            ) + ". No screen was captured. Ask to inspect a monitor or locate a target to request separate approval."
+            status = "completed"
     elif intent == "system.status":
         counts = store.counts()
         assistant_name = store.get_settings()["assistant_name"]
