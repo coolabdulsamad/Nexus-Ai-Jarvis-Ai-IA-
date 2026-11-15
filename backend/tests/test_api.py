@@ -36,6 +36,7 @@ def test_read_only_time_command(monkeypatch, tmp_path):
         body = response.json()
         assert body["intent"] == "system.time"
         assert body["status"] == "completed"
+        assert "laptop’s local time" in body["message"]
         assert "UTC" in body["message"]
         assert api.get("/api/approvals?status=pending").json()["approvals"] == []
 
@@ -110,6 +111,7 @@ def test_voice_and_avatar_settings_persist(monkeypatch, tmp_path):
             "avatar_mode": "globe",
             "model_enabled": True,
             "model_name": "qwen2.5:3b",
+            "vision_model_name": "llava:7b",
             "wake_word": "Nexus, Hey",
             "speech_locale": "en-NG",
         }
@@ -331,7 +333,7 @@ def test_conversation_timeline_tracks_command_outcomes(monkeypatch, tmp_path):
         conversations = api.get("/api/conversations").json()["conversations"]
         by_id = {entry["id"]: entry for entry in conversations}
         assert by_id[completed["command_id"]]["status"] == "completed"
-        assert "UTC" in by_id[completed["command_id"]]["response"]
+        assert "laptop’s local time" in by_id[completed["command_id"]]["response"]
         assert by_id[pending["command_id"]]["status"] == "rejected"
         assert api.get("/api/health").json()["conversations"] == 2
 
@@ -499,3 +501,23 @@ def test_camera_session_rejects_invalid_transitions_and_unknown_events(monkeypat
             "/api/camera/sessions/not-real/events", json={"event": "started"}
         )
         assert missing.status_code == 404
+
+
+def test_natural_time_and_date_queries_bypass_model_inference(monkeypatch, tmp_path):
+    class NoInference:
+        def respond(self, *args, **kwargs):
+            raise AssertionError("Time and date must not use Ollama")
+
+    with make_client(monkeypatch, tmp_path) as api:
+        api.app.state.assistant = NoInference()
+        for phrase in ("What is the current time right now?", "Tell me the time", "What time is it?"):
+            response = api.post("/api/commands", json={"text": phrase}).json()
+            assert response["intent"] == "system.time"
+            assert response["status"] == "completed"
+            assert "laptop’s local time" in response["message"]
+        for phrase in ("What is today's date?", "What is today’s date?", "What day is it?", "Current date"):
+            response = api.post("/api/commands", json={"text": phrase}).json()
+            assert response["intent"] == "system.date"
+            assert response["status"] == "completed"
+            assert "laptop’s local date" in response["message"]
+        assert api.get("/api/approvals?status=pending").json()["approvals"] == []
