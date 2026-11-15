@@ -34,8 +34,8 @@ export default function VoiceSettings({
       setError('Enter a name for your assistant.')
       return
     }
-    if (!draft.model_name.trim()) {
-      setError('Enter the Ollama model to use.')
+    if (!draft.model_name.trim() || !draft.vision_model_name.trim()) {
+      setError('Enter the Ollama conversation and vision models to use.')
       return
     }
     if (draft.wake_word.split(/[,\n]/).filter((phrase) => phrase.trim()).length > 8) {
@@ -53,6 +53,7 @@ export default function VoiceSettings({
         ...draft,
         assistant_name: draft.assistant_name.trim(),
         model_name: draft.model_name.trim(),
+        vision_model_name: draft.vision_model_name.trim(),
         wake_word: draft.wake_word.trim(),
       })
       onClose()
@@ -140,6 +141,18 @@ export default function VoiceSettings({
             <p className={`model-settings-status model-settings-${modelStatus?.state ?? 'unavailable'}`}>
               {modelStatus?.detail ?? 'Model status has not been checked yet.'}
             </p>
+            <label htmlFor="vision-model-name">Ollama vision model for approved screen inspection</label>
+            <input
+              id="vision-model-name"
+              list="installed-ollama-models"
+              value={draft.vision_model_name}
+              onChange={(event) => setDraft({ ...draft, vision_model_name: event.target.value })}
+              maxLength={100}
+              autoComplete="off"
+              disabled={!draft.model_enabled}
+              placeholder="llava:7b"
+            />
+            <p className="model-settings-status">Used only after a separate monitor-snapshot approval. The model can describe or propose a target, but cannot click or execute actions.</p>
           </div>
 
           <fieldset>

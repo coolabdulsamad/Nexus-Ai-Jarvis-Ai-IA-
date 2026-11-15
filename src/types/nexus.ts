@@ -15,6 +15,7 @@ export interface AssistantSettings {
   avatar_mode: AvatarMode
   model_enabled: boolean
   model_name: string
+  vision_model_name: string
   wake_word: string
   speech_locale: 'en-NG' | 'en-US' | 'en-GB'
 }
@@ -41,10 +42,31 @@ export interface DirectoryEntry {
 }
 
 export interface LocalApplication {
-  id: 'vscode' | 'files'
+  id: 'vscode' | 'files' | 'wps'
   label: string
   description: string
   installed: boolean
+}
+
+export interface MonitorInfo {
+  id: number
+  left: number
+  top: number
+  width: number
+  height: number
+  primary: boolean
+  name: string
+}
+
+export interface ScreenInspection {
+  image_data_url: string
+  monitor: MonitorInfo
+  description: string
+  target?: string
+  model?: string
+  x?: number
+  y?: number
+  confidence?: number
 }
 
 export interface SystemStatus {
@@ -58,10 +80,12 @@ export interface SystemStatus {
   }
   applications: LocalApplication[]
   screen_awareness: {
-    state: 'not_configured'
+    state: 'available' | 'unavailable'
     capture_active: false
-    monitors_visible: 0
+    monitors_visible: number
+    monitors: MonitorInfo[]
     clicking_enabled: false
+    clicking_available?: boolean
     detail: string
   }
 }
@@ -165,7 +189,12 @@ export interface Approval {
     recording?: boolean
     storage?: 'none'
     path?: string
-    application?: 'vscode' | 'files'
+    application?: 'vscode' | 'files' | 'wps'
+    monitor_id?: number
+    question?: string
+    target?: string
+    x?: number
+    y?: number
   }
   status: 'pending' | 'approved' | 'rejected'
   created_at: string
@@ -192,6 +221,7 @@ export interface CommandResult {
   model?: string
   memory_count?: number
   directories?: DirectoryEntry[]
+  screen?: ScreenInspection | null
   follow_up?: {
     kind: 'system.folder'
     application: 'vscode' | 'files'
@@ -207,6 +237,7 @@ export interface ApprovalResult extends Approval {
   memory: MemoryRecord | null
   device: OwnedDevice | null
   camera_session: CameraSession | null
+  screen: ScreenInspection | null
   message: string
   output: string | null
   command_status: CommandStatus

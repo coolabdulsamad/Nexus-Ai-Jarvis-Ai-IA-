@@ -105,16 +105,23 @@ export default function SystemControl({ busy, onCommand }: SystemControlProps) {
             <div className="system-subheading"><AppWindow size={17} /><strong>Fixed app catalog</strong></div>
             {status?.applications.map((application) => (
               <div className="app-launch-row" key={application.id}>
-                <div>{application.id === 'vscode' ? <Code2 size={20} /> : <Folder size={20} />}<span><strong>{application.label}</strong><small>{application.installed ? 'Detected on PATH' : 'Not detected on PATH'}</small></span></div>
+                <div>{application.id === 'vscode' ? <Code2 size={20} /> : application.id === 'wps' ? <AppWindow size={20} /> : <Folder size={20} />}<span><strong>{application.label}</strong><small>{application.installed ? 'Detected on PATH' : 'Not detected on PATH'}</small></span></div>
                 <button onClick={() => onCommand(`Open ${application.label}`)} disabled={busy || !application.installed}>Request open</button>
               </div>
             )) ?? <p className="system-loading">Checking local applications…</p>}
           </div>
 
           <div className="screen-boundary-card">
-            <div><Monitor size={21} /><span><strong>Screen & multi-monitor</strong><small>NOT CONFIGURED</small></span></div>
-            <p>{status?.screen_awareness.detail ?? 'No screen connector has been activated.'}</p>
-            <span className="screen-off"><WifiOff size={13} /> CAPTURE OFF · CLICKING OFF</span>
+            <div><Monitor size={21} /><span><strong>Screen & multi-monitor</strong><small>{status?.screen_awareness.state === 'available' ? `${status.screen_awareness.monitors_visible} MONITOR(S)` : 'CONNECTOR UNAVAILABLE'}</small></span></div>
+            <p>{status?.screen_awareness.detail ?? 'Checking monitor metadata without capturing screen content…'}</p>
+            <div className="screen-monitor-list">
+              {status?.screen_awareness.monitors.map((monitor) => (
+                <button key={monitor.id} onClick={() => onCommand(`Inspect monitor ${monitor.id}`)} disabled={busy}>
+                  Inspect {monitor.id} · {monitor.width}×{monitor.height}{monitor.primary ? ' · Primary' : ''}
+                </button>
+              ))}
+            </div>
+            <span className="screen-off"><WifiOff size={13} /> CONTINUOUS CAPTURE OFF · EACH CLICK NEEDS APPROVAL</span>
           </div>
         </div>
       </div>
