@@ -172,6 +172,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .result-directory-choices button > span { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .result-directory-choices strong { font-size: 10px; }
 .result-directory-choices small { overflow: hidden; color: #8d8b78; font: 8px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.screen-inspection-result { margin-top: 14px; overflow: hidden; border: 1px solid #494127; background: #0c0d0c; }
+.screen-inspection-result img { display: block; width: 100%; max-height: 430px; object-fit: contain; background: #090a09; }
+.screen-inspection-meta { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 11px; border-top: 1px solid #353226; }
+.screen-inspection-meta > span { color: #a79b6c; font: 8px/1.5 ui-monospace, monospace; letter-spacing: .06em; }
+.screen-inspection-meta button { min-height: 44px; padding: 0 12px; border: 1px solid var(--yellow); background: #211e13; color: var(--yellow); cursor: pointer; font-size: 10px; line-height: 1.4; }
+.screen-inspection-meta button:hover:not(:disabled) { background: var(--yellow); color: #19170d; }
+.screen-inspection-meta button:disabled { cursor: not-allowed; opacity: .5; }
 
 .system-section { margin-top: 20px; padding: 28px; }
 .system-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; padding-bottom: 24px; border-bottom: 1px solid var(--line-soft); }
@@ -219,7 +226,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .screen-boundary-card strong { color: #b7bab1; font-size: 11px; }
 .screen-boundary-card small { color: #a58c69; font: 8px ui-monospace, monospace; }
 .screen-boundary-card p { color: #747970; font-size: 10px; line-height: 1.65; }
-.screen-off { display: flex; align-items: center; gap: 7px; color: #a58c69; font: 8px ui-monospace, monospace; }
+.screen-boundary-card > .screen-monitor-list { display: grid; gap: 6px; margin: 12px 0; }
+.screen-monitor-list button { min-height: 44px; padding: 8px 10px; border: 1px solid #45402d; background: #191810; color: #d2b957; cursor: pointer; font-size: 9px; line-height: 1.45; text-align: left; }
+.screen-monitor-list button:hover:not(:disabled) { border-color: var(--yellow); color: var(--yellow); }
+.screen-monitor-list button:disabled { cursor: not-allowed; opacity: .5; }
+.screen-off { display: flex; align-items: center; gap: 7px; color: #a58c69; font: 8px/1.5 ui-monospace, monospace; }
+.screen-off svg { flex: 0 0 auto; }
 .system-error { margin: 18px 0 0; padding: 10px; background: #251715; color: var(--red); font-size: 10px; }
 .system-config-note { margin: 22px 0 0; padding-top: 15px; border-top: 1px solid var(--line-soft); color: var(--faint); font-size: 9px; line-height: 1.7; }
 .system-config-note code { color: #aaa58e; }
