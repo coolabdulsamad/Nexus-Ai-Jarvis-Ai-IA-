@@ -334,9 +334,17 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    void refresh().finally(() => setLoading(false))
+    let active = true
+    const initialRefresh = async () => {
+      await refresh()
+      if (active) setLoading(false)
+    }
+    void initialRefresh()
     const interval = window.setInterval(() => void refresh(), 30000)
-    return () => window.clearInterval(interval)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -615,7 +623,7 @@ export default function Home() {
 
     if (decision === 'approve' && cameraAction && cameraNeedsStopRef.current) {
       setCameraNotice('Stop the current camera preview or pending browser request before approving another one.')
-      document.getElementById('camera')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      document.getElementById('approvals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
     }
 
@@ -732,7 +740,7 @@ export default function Home() {
         </div>
       </aside>
 
-      {mobileNavOpen && <button className="nav-scrim" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />}
+      {mobileNavOpen && <button className="mobile-nav-scrim" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation" />}
 
       <main className="main-shell">
         <header className="topbar">
@@ -1191,7 +1199,7 @@ export default function Home() {
                   ) : devices.map((device) => (
                     <article className="device-row" key={device.id}>
                       <div className="device-row-heading">
-                        <Smartphone size={17} />
+                        <Smartphone size={18} />
                         <div><strong>{device.name}</strong><span>{device.label}</span></div>
                         <span className="not-connected"><WifiOff size={12} /> NOT CONNECTED</span>
                       </div>
